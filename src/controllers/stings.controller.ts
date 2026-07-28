@@ -18,7 +18,7 @@ export async function nearby(req: Request, res: Response, next: NextFunction): P
 
 export async function create(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    if (!req.file) {
+    if (!req.file?.buffer) {
       throw new AppError(422, 'VALIDATION_ERROR', 'Поле photo обязательно');
     }
 
@@ -30,7 +30,7 @@ export async function create(req: Request, res: Response, next: NextFunction): P
       lng: Number(req.body.lng),
       accuracyM: req.body.accuracy != null ? Number(req.body.accuracy) : null,
       capturedAt: new Date(req.body.capturedAt),
-      imageFilename: req.file.filename,
+      photoBuffer: req.file.buffer,
       idempotencyKey,
     });
 
@@ -53,6 +53,15 @@ export async function remove(req: Request, res: Response, next: NextFunction): P
   try {
     await stingsService.deleteSting(req.params.id, req.user!.id);
     res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function react(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const result = await stingsService.addReaction(req.params.id, req.body.type);
+    res.status(200).json(result);
   } catch (err) {
     next(err);
   }

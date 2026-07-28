@@ -17,3 +17,7 @@ export const createStingValidator = [
 export const stingIdValidator = [
   param('id').isMongoId().withMessage('Некорректный id жала'),
 ];
+
+export const reactionValidator = [
+  body('type').equals('like').withMessage('Поддерживается только type=like'),
+];

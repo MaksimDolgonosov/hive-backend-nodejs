@@ -37,6 +37,13 @@ export interface CreateStingInput {
   lng: number;
   accuracyM: number | null;
   capturedAt: Date;
-  imageFilename: string;
+  photoBuffer: Buffer;
   idempotencyKey?: string;
 }
+
+export interface UploadedImageUrls {
+  imageUrl: string;
+  thumbnailUrl: string;
+}
+
+export type ReactionType = 'like';

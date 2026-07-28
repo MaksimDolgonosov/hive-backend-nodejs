@@ -6,6 +6,7 @@ import handleValidation from '../middleware/validate.middleware';
 import {
   createStingValidator,
   nearbyValidator,
+  reactionValidator,
   stingIdValidator,
 } from '../validators/stings.validators';
 
@@ -21,6 +22,14 @@ router.post(
   stingsController.create,
 );
 router.get('/:id', requireAuth, stingIdValidator, handleValidation, stingsController.getById);
+router.post(
+  '/:id/reactions',
+  requireAuth,
+  stingIdValidator,
+  reactionValidator,
+  handleValidation,
+  stingsController.react,
+);
 router.delete('/:id', requireAuth, stingIdValidator, handleValidation, stingsController.remove);
 
 export default router;

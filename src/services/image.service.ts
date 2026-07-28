@@ -1,0 +1,17 @@
+import sharp from 'sharp';
+import env from '../config/env';
+
+export interface ProcessedPhoto {
+  original: Buffer;
+  thumbnail: Buffer;
+}
+
+export async function processStingPhoto(buffer: Buffer): Promise<ProcessedPhoto> {
+  const original = await sharp(buffer).jpeg({ quality: 90 }).toBuffer();
+  const thumbnail = await sharp(buffer)
+    .resize({ width: env.thumbnailWidth, withoutEnlargement: true })
+    .jpeg({ quality: env.thumbnailQuality })
+    .toBuffer();
+
+  return { original, thumbnail };
+}

@@ -1,26 +1,9 @@
-import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
+import { NextFunction, Request, Response } from 'express';
 import multer from 'multer';
-import env from '../config/env';
 import { AppError } from '../utils/AppError';
 
-if (!fs.existsSync(env.uploadDir)) {
-  fs.mkdirSync(env.uploadDir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, env.uploadDir);
-  },
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname) || '.jpg';
-    cb(null, `${crypto.randomUUID()}${ext}`);
-  },
-});
-
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (file.mimetype === 'image/jpeg') {
@@ -30,8 +13,6 @@ const upload = multer({
     cb(new AppError(422, 'VALIDATION_ERROR', 'Допустим только JPEG'));
   },
 });
-
-import { NextFunction, Request, Response } from 'express';
 
 export const uploadStingPhoto = upload.single('photo');
 

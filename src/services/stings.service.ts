@@ -1,11 +1,16 @@
 import env from '../config/env';
 import Hive, { IHive } from '../models/Hive';
 import Sting, { ISting } from '../models/Sting';
+import { assignStingToHive } from './clustering.service';
+import { areChangeStreamsActive, handleStingRemoved } from './hive-cleanup.service';
+import { processStingPhoto } from './image.service';
+import { uploadStingImages } from './storage.service';
 import {
   BboxQuery,
   CreateStingInput,
   PublicHive,
   PublicSting,
+  ReactionType,
 } from '../types/sting';
 import { AppError } from '../utils/AppError';
 import { bboxToGeoBox, coordinatesToGeoPoint } from '../utils/geo';
@@ -35,10 +40,6 @@ function toPublicHive(hive: IHive): PublicHive {
   };
 }
 
-function buildImageUrl(filename: string): string {
-  return `${env.baseUrl}/uploads/${filename}`;
-}
-
 function buildExpiresAt(createdAt: Date): Date {
   return new Date(createdAt.getTime() + env.stingTtlHours * 60 * 60 * 1000);
 }
@@ -51,6 +52,7 @@ export async function findNearby(bbox: BboxQuery): Promise<{ stings: PublicSting
     Sting.find({
       location: { $geoWithin: { $box: box } },
       expiresAt: { $gt: now },
+      hiveId: null,
     }).sort({ createdAt: -1 }),
     Hive.find({
       center: { $geoWithin: { $box: box } },
@@ -76,13 +78,14 @@ export async function createSting(input: CreateStingInput): Promise<{ sting: Pub
     }
   }
 
-  const imageUrl = buildImageUrl(input.imageFilename);
+  const processed = await processStingPhoto(input.photoBuffer);
+  const { imageUrl, thumbnailUrl } = await uploadStingImages(processed.original, processed.thumbnail);
   const createdAt = new Date();
 
   const sting = await Sting.create({
     authorId: input.authorId,
     imageUrl,
-    thumbnailUrl: imageUrl,
+    thumbnailUrl,
     location: {
       type: 'Point',
       coordinates: [input.lng, input.lat],
@@ -93,7 +96,8 @@ export async function createSting(input: CreateStingInput): Promise<{ sting: Pub
     idempotencyKey: input.idempotencyKey ?? null,
   });
 
-  return { sting: toPublicSting(sting) };
+  const clustered = await assignStingToHive(sting);
+  return { sting: toPublicSting(clustered) };
 }
 
 export async function getStingById(id: string): Promise<{ sting: PublicSting }> {
@@ -112,5 +116,28 @@ export async function deleteSting(id: string, userId: string): Promise<void> {
   if (String(sting.authorId) !== userId) {
     throw new AppError(403, 'FORBIDDEN', 'Нельзя удалить чужое жало');
   }
+
+  const hiveId = sting.hiveId;
   await sting.deleteOne();
+
+  if (!areChangeStreamsActive()) {
+    await handleStingRemoved(hiveId);
+  }
+}
+
+export async function addReaction(
+  id: string,
+  _type: ReactionType,
+): Promise<{ reactionsCount: number }> {
+  const sting = await Sting.findOneAndUpdate(
+    { _id: id, expiresAt: { $gt: new Date() } },
+    { $inc: { reactionsCount: 1 } },
+    { new: true },
+  );
+
+  if (!sting) {
+    throw new AppError(404, 'STING_NOT_FOUND', 'Жало не найдено');
+  }
+
+  return { reactionsCount: sting.reactionsCount };
 }
