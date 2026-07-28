@@ -1,8 +1,10 @@
 import mongoose, { Types } from 'mongoose';
+import env from '../config/env';
 import Hive from '../models/Hive';
 import Sting from '../models/Sting';
 
 let changeStreamsActive = false;
+let periodicCleanupTimer: ReturnType<typeof setInterval> | null = null;
 
 export function areChangeStreamsActive(): boolean {
   return changeStreamsActive;
@@ -26,6 +28,31 @@ export async function handleStingRemoved(hiveId: Types.ObjectId | null | undefin
   }
 
   await hive.save();
+}
+
+/** Пересчитывает activeStingsCount по фактическим жала́м — fallback без Change Streams. */
+export async function reconcileHives(): Promise<void> {
+  const now = new Date();
+  const hives = await Hive.find();
+
+  await Promise.all(
+    hives.map(async (hive) => {
+      const activeCount = await Sting.countDocuments({
+        hiveId: hive._id,
+        expiresAt: { $gt: now },
+      });
+
+      if (activeCount === 0) {
+        await hive.deleteOne();
+        return;
+      }
+
+      if (hive.activeStingsCount !== activeCount) {
+        hive.activeStingsCount = activeCount;
+        await hive.save();
+      }
+    }),
+  );
 }
 
 async function enablePreImages(): Promise<void> {
@@ -56,13 +83,29 @@ async function isReplicaSetAvailable(): Promise<boolean> {
   }
 }
 
+function startPeriodicHiveCleanup(): void {
+  if (periodicCleanupTimer) {
+    return;
+  }
+
+  void reconcileHives();
+
+  periodicCleanupTimer = setInterval(() => {
+    void reconcileHives().catch((err: Error) => {
+      console.warn('Ошибка периодической очистки ульев:', err.message);
+    });
+  }, env.hiveCleanupIntervalMs);
+
+  console.log(
+    `Периодическая очистка ульев: каждые ${env.hiveCleanupIntervalMs / 1000}с (fallback без replica set)`,
+  );
+}
+
 export async function startStingDeletionWatcher(): Promise<void> {
   changeStreamsActive = false;
 
   if (!(await isReplicaSetAvailable())) {
-    console.warn(
-      'Replica set не настроен — Change Streams отключены. Очистка ульев при TTL не работает.',
-    );
+    startPeriodicHiveCleanup();
     return;
   }
 
@@ -83,7 +126,8 @@ export async function startStingDeletionWatcher(): Promise<void> {
 
   stream.on('error', (err: Error) => {
     changeStreamsActive = false;
-    console.warn('Change Streams ошибка:', err.message);
+    console.warn('Change Streams ошибка, включаем fallback:', err.message);
+    startPeriodicHiveCleanup();
   });
 
   changeStreamsActive = true;

@@ -31,6 +31,7 @@ const env = {
   r2PublicUrl: process.env.R2_PUBLIC_URL || '',
   hiveRadiusM: Number(process.env.HIVE_RADIUS_M) || 150,
   hiveActivationThreshold: Number(process.env.HIVE_ACTIVATION_THRESHOLD) || 3,
+  hiveCleanupIntervalMs: Number(process.env.HIVE_CLEANUP_INTERVAL_MS) || 60_000,
   thumbnailWidth: Number(process.env.THUMBNAIL_WIDTH) || 400,
   thumbnailQuality: Number(process.env.THUMBNAIL_QUALITY) || 80,
 } as const;
