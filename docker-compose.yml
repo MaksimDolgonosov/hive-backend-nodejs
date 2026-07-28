@@ -1,0 +1,21 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: sting-mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: sting
+      MONGO_INITDB_ROOT_PASSWORD: sting_dev_password
+      MONGO_INITDB_DATABASE: sting_app
+    ports:
+      - "27018:27017"
+    volumes:
+      - sting_mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  sting_mongo_data:

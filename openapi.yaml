@@ -1,0 +1,643 @@
+openapi: 3.0.3
+info:
+  title: Sting App API
+  description: >
+    API мобильного приложения «Улей»: публикация геолоцированных фото
+    ("жал"), которые исчезают через 4 часа, и их кластеризация в «ульи».
+  version: 0.1.0
+  contact:
+    name: Sting App backend team
+
+servers:
+  - url: https://api.sting-app.example.com/api/v1
+    description: Production
+  - url: https://staging-api.sting-app.example.com/api/v1
+    description: Staging
+
+tags:
+  - name: auth
+    description: Регистрация, вход, управление токенами
+  - name: stings
+    description: Публикация и просмотр жал
+  - name: hives
+    description: Просмотр ульев (кластеров жал)
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ---------------------------------------------------------------------
+  # AUTH
+  # ---------------------------------------------------------------------
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Регистрация нового пользователя
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Пользователь создан
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+                  tokens:
+                    $ref: '#/components/schemas/AuthTokens'
+        '409':
+          description: Email или username уже заняты
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Вход по email и паролю
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Успешный вход
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+                  tokens:
+                    $ref: '#/components/schemas/AuthTokens'
+        '401':
+          description: Неверные учётные данные
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: Обновление accessToken по refreshToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: Новая пара токенов
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tokens:
+                    $ref: '#/components/schemas/AuthTokens'
+        '401':
+          description: refreshToken истёк или отозван — клиент обязан разлогинить пользователя
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Выход (отзыв refreshToken текущего устройства)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '204':
+          description: Токен отозван
+
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: Текущий авторизованный пользователь
+      responses:
+        '200':
+          description: Данные пользователя
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ---------------------------------------------------------------------
+  # STINGS
+  # ---------------------------------------------------------------------
+  /stings/nearby:
+    get:
+      tags: [stings]
+      summary: Активные жала и ульи в видимой области карты
+      parameters:
+        - $ref: '#/components/parameters/SwLat'
+        - $ref: '#/components/parameters/SwLng'
+        - $ref: '#/components/parameters/NeLat'
+        - $ref: '#/components/parameters/NeLng'
+      responses:
+        '200':
+          description: Список жал и ульев в bounding box
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stings:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Sting'
+                  hives:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Hive'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /stings:
+    post:
+      tags: [stings]
+      summary: Публикация нового жала (только камера, multipart)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [photo, lat, lng, accuracy, capturedAt]
+              properties:
+                photo:
+                  type: string
+                  format: binary
+                  description: JPEG-файл, снятый камерой приложения
+                lat:
+                  type: number
+                  format: double
+                lng:
+                  type: number
+                  format: double
+                accuracy:
+                  type: number
+                  format: float
+                  description: Точность GPS в метрах на момент съёмки
+                capturedAt:
+                  type: string
+                  format: date-time
+                  description: Клиентский таймстамп момента съёмки
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: >
+            UUID, генерируемый клиентом при старте публикации — предотвращает
+            дубликаты при повторной отправке из-за обрыва связи.
+      responses:
+        '201':
+          description: Жало опубликовано
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sting:
+                    $ref: '#/components/schemas/Sting'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          description: Не пройдена серверная анти-спуфинг проверка
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: STING_VALIDATION_FAILED
+                  message: Фото не прошло проверку подлинности
+                  details:
+                    reason: EXIF_MISMATCH
+        '429':
+          description: Превышен лимит частоты публикаций
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /stings/{id}:
+    get:
+      tags: [stings]
+      summary: Получить одно жало по id
+      parameters:
+        - $ref: '#/components/parameters/StingId'
+      responses:
+        '200':
+          description: Жало найдено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sting:
+                    $ref: '#/components/schemas/Sting'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Жало истекло и было удалено, либо не существует
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags: [stings]
+      summary: Удалить собственное жало до истечения TTL
+      parameters:
+        - $ref: '#/components/parameters/StingId'
+      responses:
+        '204':
+          description: Жало удалено
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Попытка удалить чужое жало
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Жало не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /stings/{id}/reactions:
+    post:
+      tags: [stings]
+      summary: Поставить реакцию на жало
+      parameters:
+        - $ref: '#/components/parameters/StingId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type:
+                  type: string
+                  enum: [like]
+                  default: like
+      responses:
+        '200':
+          description: Реакция учтена
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reactionsCount:
+                    type: integer
+                    example: 14
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Жало не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ---------------------------------------------------------------------
+  # HIVES
+  # ---------------------------------------------------------------------
+  /hives/{id}:
+    get:
+      tags: [hives]
+      summary: Улей и список жал в нём
+      parameters:
+        - $ref: '#/components/parameters/HiveId'
+      responses:
+        '200':
+          description: Улей найден
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  hive:
+                    $ref: '#/components/schemas/Hive'
+                  stings:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Sting'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Улей не найден (растворился — не осталось активных жал)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /hives/{id}/stings:
+    get:
+      tags: [hives]
+      summary: Пагинированный список жал в улье
+      parameters:
+        - $ref: '#/components/parameters/HiveId'
+        - in: query
+          name: cursor
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            default: 20
+            maximum: 50
+      responses:
+        '200':
+          description: Страница жал улья
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stings:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Sting'
+                  nextCursor:
+                    type: string
+                    nullable: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    StingId:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+        format: uuid
+    HiveId:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+        format: uuid
+    SwLat:
+      in: query
+      name: swLat
+      required: true
+      schema:
+        type: number
+        format: double
+      description: Широта юго-западного угла видимой области карты
+    SwLng:
+      in: query
+      name: swLng
+      required: true
+      schema:
+        type: number
+        format: double
+      description: Долгота юго-западного угла видимой области карты
+    NeLat:
+      in: query
+      name: neLat
+      required: true
+      schema:
+        type: number
+        format: double
+      description: Широта северо-восточного угла видимой области карты
+    NeLng:
+      in: query
+      name: neLng
+      required: true
+      schema:
+        type: number
+        format: double
+      description: Долгота северо-восточного угла видимой области карты
+
+  responses:
+    Unauthorized:
+      description: Отсутствует или недействителен accessToken
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ValidationError:
+      description: Ошибка валидации входных данных
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, username, avatarUrl, createdAt]
+
+    AuthTokens:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          description: JWT, TTL ~15 минут
+        refreshToken:
+          type: string
+          description: TTL ~30 дней
+        expiresAt:
+          type: string
+          format: date-time
+          description: Срок действия accessToken
+      required: [accessToken, refreshToken, expiresAt]
+
+    RegisterRequest:
+      type: object
+      required: [email, password, username]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          minLength: 8
+        username:
+          type: string
+          minLength: 3
+          maxLength: 30
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+
+    GeoPoint:
+      type: object
+      properties:
+        lat:
+          type: number
+          format: double
+        lng:
+          type: number
+          format: double
+      required: [lat, lng]
+
+    Sting:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        authorId:
+          type: string
+          format: uuid
+        imageUrl:
+          type: string
+          format: uri
+        thumbnailUrl:
+          type: string
+          format: uri
+        location:
+          $ref: '#/components/schemas/GeoPoint'
+        hiveId:
+          type: string
+          format: uuid
+          nullable: true
+          description: null, если жало пока не вошло в кластер
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          description: createdAt + 4 часа
+        reactionsCount:
+          type: integer
+      required:
+        - id
+        - authorId
+        - imageUrl
+        - thumbnailUrl
+        - location
+        - hiveId
+        - createdAt
+        - expiresAt
+        - reactionsCount
+
+    Hive:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        center:
+          $ref: '#/components/schemas/GeoPoint'
+        radiusM:
+          type: number
+          format: float
+        activeStingsCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - center
+        - radiusM
+        - activeStingsCount
+        - createdAt
+        - updatedAt
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: STING_LOCATION_MISMATCH
+            message:
+              type: string
+              example: Координаты фото не совпадают с текущим местоположением
+            details:
+              type: object
+              additionalProperties: true
+          required: [code, message]
+      required: [error]
