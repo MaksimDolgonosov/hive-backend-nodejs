@@ -35,7 +35,7 @@ export interface CreateStingInput {
   authorId: string;
   lat: number;
   lng: number;
-  accuracyM: number | null;
+  accuracyM: number;
   capturedAt: Date;
   photoBuffer: Buffer;
   idempotencyKey?: string;

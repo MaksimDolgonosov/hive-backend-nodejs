@@ -5,6 +5,8 @@ import ms from 'ms';
 import env from '../config/env';
 import RefreshToken from '../models/RefreshToken';
 import User, { IUser } from '../models/User';
+import { processAvatar } from './image.service';
+import { uploadAvatarImage, deleteAvatarImage } from './storage.service';
 import { AppError } from '../utils/AppError';
 
 const BCRYPT_ROUNDS = 12;
@@ -133,5 +135,36 @@ export async function getMe(userId: string): Promise<{ user: PublicUser }> {
   if (!user) {
     throw new AppError(404, 'USER_NOT_FOUND', 'Пользователь не найден');
   }
+  return { user: toPublicUser(user) };
+}
+
+export async function updateAvatar(
+  userId: string,
+  photoBuffer: Buffer,
+): Promise<{ user: PublicUser }> {
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new AppError(404, 'USER_NOT_FOUND', 'Пользователь не найден');
+  }
+
+  const processed = await processAvatar(photoBuffer);
+  user.avatarUrl = await uploadAvatarImage(userId, processed);
+  await user.save();
+
+  return { user: toPublicUser(user) };
+}
+
+export async function removeAvatar(userId: string): Promise<{ user: PublicUser }> {
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new AppError(404, 'USER_NOT_FOUND', 'Пользователь не найден');
+  }
+
+  if (user.avatarUrl) {
+    await deleteAvatarImage(userId);
+    user.avatarUrl = null;
+    await user.save();
+  }
+
   return { user: toPublicUser(user) };
 }

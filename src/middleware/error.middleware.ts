@@ -18,7 +18,7 @@ function errorMiddleware(
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
       res.status(422).json({
-        error: { code: 'VALIDATION_ERROR', message: 'Файл слишком большой (максимум 10 МБ)' },
+        error: { code: 'VALIDATION_ERROR', message: 'Файл слишком большой' },
       });
       return;
     }

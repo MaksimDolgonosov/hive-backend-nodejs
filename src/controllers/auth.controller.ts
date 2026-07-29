@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import * as authService from '../services/auth.service';
+import { AppError } from '../utils/AppError';
 
 export async function register(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -40,6 +41,28 @@ export async function logout(req: Request, res: Response, next: NextFunction): P
 export async function me(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const result = await authService.getMe(req.user!.id);
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function uploadAvatar(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (!req.file?.buffer) {
+      throw new AppError(422, 'VALIDATION_ERROR', 'Поле avatar обязательно');
+    }
+
+    const result = await authService.updateAvatar(req.user!.id, req.file.buffer);
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function removeAvatar(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const result = await authService.removeAvatar(req.user!.id);
     res.status(200).json(result);
   } catch (err) {
     next(err);

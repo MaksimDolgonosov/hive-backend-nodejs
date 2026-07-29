@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as stingsController from '../controllers/stings.controller';
 import requireAuth from '../middleware/auth.middleware';
+import { stingCreateRateLimit } from '../middleware/rate-limit.middleware';
 import { handleStingPhotoUpload } from '../middleware/upload.middleware';
 import handleValidation from '../middleware/validate.middleware';
 import {
@@ -16,6 +17,7 @@ router.get('/nearby', requireAuth, nearbyValidator, handleValidation, stingsCont
 router.post(
   '/',
   requireAuth,
+  stingCreateRateLimit,
   handleStingPhotoUpload,
   createStingValidator,
   handleValidation,

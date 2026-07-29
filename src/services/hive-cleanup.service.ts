@@ -1,7 +1,14 @@
 import mongoose, { Types } from 'mongoose';
+import {
+  emitHiveDissolved,
+  emitHiveUpdated,
+  emitStingExpired,
+} from '../sockets/realtime';
 import env from '../config/env';
 import Hive from '../models/Hive';
 import Sting from '../models/Sting';
+import { coordinatesToGeoPoint } from '../utils/geo';
+import { toPublicHive } from '../utils/sting.mapper';
 
 let changeStreamsActive = false;
 let periodicCleanupTimer: ReturnType<typeof setInterval> | null = null;
@@ -10,24 +17,56 @@ export function areChangeStreamsActive(): boolean {
   return changeStreamsActive;
 }
 
-export async function handleStingRemoved(hiveId: Types.ObjectId | null | undefined): Promise<void> {
-  if (!hiveId) {
-    return;
-  }
-
+export async function handleStingRemoved(
+  hiveId: Types.ObjectId,
+): Promise<'dissolved' | 'updated' | 'missing'> {
   const hive = await Hive.findById(hiveId);
   if (!hive) {
-    return;
+    return 'missing';
   }
 
   hive.activeStingsCount = Math.max(0, hive.activeStingsCount - 1);
 
   if (hive.activeStingsCount === 0) {
     await hive.deleteOne();
-    return;
+    return 'dissolved';
   }
 
   await hive.save();
+  return 'updated';
+}
+
+export async function notifyStingRemoved(
+  stingId: string,
+  hiveId: Types.ObjectId | null | undefined,
+  lat: number,
+  lng: number,
+): Promise<void> {
+  emitStingExpired(stingId, hiveId ? String(hiveId) : null, lat, lng);
+
+  if (!hiveId) {
+    return;
+  }
+
+  const hiveBefore = await Hive.findById(hiveId);
+  if (!hiveBefore) {
+    return;
+  }
+
+  const center = coordinatesToGeoPoint(hiveBefore.center.coordinates);
+  const outcome = await handleStingRemoved(hiveId);
+
+  if (outcome === 'dissolved') {
+    emitHiveDissolved(String(hiveId), center.lat, center.lng);
+    return;
+  }
+
+  if (outcome === 'updated') {
+    const hive = await Hive.findById(hiveId);
+    if (hive) {
+      emitHiveUpdated(toPublicHive(hive));
+    }
+  }
 }
 
 /** Пересчитывает activeStingsCount по фактическим жала́м — fallback без Change Streams. */
@@ -43,13 +82,16 @@ export async function reconcileHives(): Promise<void> {
       });
 
       if (activeCount === 0) {
+        const center = coordinatesToGeoPoint(hive.center.coordinates);
         await hive.deleteOne();
+        emitHiveDissolved(String(hive._id), center.lat, center.lng);
         return;
       }
 
       if (hive.activeStingsCount !== activeCount) {
         hive.activeStingsCount = activeCount;
         await hive.save();
+        emitHiveUpdated(toPublicHive(hive));
       }
     }),
   );
@@ -117,10 +159,13 @@ export async function startStingDeletionWatcher(): Promise<void> {
 
   stream.on('change', (change) => {
     void (async () => {
-      const hiveId = change.fullDocumentBeforeChange?.hiveId;
-      if (hiveId) {
-        await handleStingRemoved(hiveId);
+      const doc = change.fullDocumentBeforeChange;
+      if (!doc?.location?.coordinates) {
+        return;
       }
+
+      const [lng, lat] = doc.location.coordinates;
+      await notifyStingRemoved(String(doc._id), doc.hiveId, lat, lng);
     })();
   });
 

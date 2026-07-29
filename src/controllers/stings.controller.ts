@@ -28,7 +28,7 @@ export async function create(req: Request, res: Response, next: NextFunction): P
       authorId: req.user!.id,
       lat: Number(req.body.lat),
       lng: Number(req.body.lng),
-      accuracyM: req.body.accuracy != null ? Number(req.body.accuracy) : null,
+      accuracyM: Number(req.body.accuracy),
       capturedAt: new Date(req.body.capturedAt),
       photoBuffer: req.file.buffer,
       idempotencyKey,

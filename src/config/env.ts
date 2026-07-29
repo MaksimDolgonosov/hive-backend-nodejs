@@ -34,6 +34,14 @@ const env = {
   hiveCleanupIntervalMs: Number(process.env.HIVE_CLEANUP_INTERVAL_MS) || 60_000,
   thumbnailWidth: Number(process.env.THUMBNAIL_WIDTH) || 400,
   thumbnailQuality: Number(process.env.THUMBNAIL_QUALITY) || 80,
+  stingCapturedAtToleranceMs: Number(process.env.STING_CAPTURED_AT_TOLERANCE_MS) || 120_000,
+  stingExifGpsToleranceM: Number(process.env.STING_EXIF_GPS_TOLERANCE_M) || 100,
+  stingMaxGpsAccuracyM: Number(process.env.STING_MAX_GPS_ACCURACY_M) || 150,
+  stingMinGpsAccuracyM: Number(process.env.STING_MIN_GPS_ACCURACY_M) || 1,
+  stingRateLimitMax: Number(process.env.STING_RATE_LIMIT_MAX) || 10,
+  stingRateLimitWindowMs: Number(process.env.STING_RATE_LIMIT_WINDOW_MS) || 3_600_000,
+  avatarSize: Number(process.env.AVATAR_SIZE) || 256,
+  avatarQuality: Number(process.env.AVATAR_QUALITY) || 85,
 } as const;
 
 export default env;

@@ -10,7 +10,9 @@ export const nearbyValidator = [
 export const createStingValidator = [
   body('lat').isFloat({ min: -90, max: 90 }).withMessage('lat должен быть от -90 до 90'),
   body('lng').isFloat({ min: -180, max: 180 }).withMessage('lng должен быть от -180 до 180'),
-  body('accuracy').optional().isFloat({ min: 0 }).withMessage('accuracy должен быть неотрицательным'),
+  body('accuracy')
+    .isFloat({ min: 0 })
+    .withMessage('accuracy обязателен и должен быть неотрицательным'),
   body('capturedAt').isISO8601().withMessage('capturedAt должен быть ISO8601'),
 ];
 

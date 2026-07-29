@@ -2,6 +2,16 @@
 
 Node.js + Express + TypeScript + MongoDB API для мобильного приложения «Улей».
 
+**Статус:** MVP backend реализован (auth, stings, hives, WebSocket, анти-спуфинг). Следующий шаг — [production deploy](./BACKEND_ARCHITECTURE.md#12-инфраструктура-и-деплой).
+
+## Документация
+
+| Файл | Содержание |
+|------|------------|
+| [BACKEND_ARCHITECTURE.md](./BACKEND_ARCHITECTURE.md) | Архитектура, модели, кластеризация, WS, деплой |
+| [TECH_DOCS.md](./TECH_DOCS.md) | Контракты API/WS для frontend |
+| [openapi.yaml](./openapi.yaml) | OpenAPI 3.0 спецификация |
+
 ## Требования
 
 - **Node.js** 20+
@@ -76,43 +86,122 @@ npm start
 
 ```
 MongoDB подключена
+Socket.io: /ws (websocket + polling)
 Сервер запущен на порту 3000
 ```
 
-API доступен по адресу: **http://localhost:3000**
+API: **http://localhost:3000/api/v1**  
+WebSocket: **http://localhost:3000/ws?token=accessToken**
 
-## Проверка, что всё работает
+## API (краткий обзор)
 
-### Регистрация пользователя
+Префикс: `/api/v1`. Все эндпоинты, кроме register/login/refresh, требуют `Authorization: Bearer <accessToken>`.
 
-```bash
-curl -X POST http://localhost:3000/api/v1/auth/register ^
-  -H "Content-Type: application/json" ^
-  -d "{\"email\":\"dev@example.com\",\"password\":\"password123\",\"username\":\"devuser\"}"
+### Auth
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| POST | `/auth/register` | Регистрация |
+| POST | `/auth/login` | Вход |
+| POST | `/auth/refresh` | Обновление access-токена |
+| POST | `/auth/logout` | Отзыв refresh-токена |
+| GET | `/auth/me` | Текущий пользователь |
+| POST | `/auth/me/avatar` | Загрузка аватара (multipart, поле `avatar`) |
+| DELETE | `/auth/me/avatar` | Удаление аватара |
+
+### Stings
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| GET | `/stings/nearby` | Жала и ульи в bbox карты |
+| POST | `/stings` | Публикация жала (multipart) |
+| GET | `/stings/:id` | Одно жало |
+| DELETE | `/stings/:id` | Удаление своего жала |
+| POST | `/stings/:id/reactions` | Реакция `{ "type": "like" }` |
+
+### Hives
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| GET | `/hives/:id` | Улей + список жал |
+| GET | `/hives/:id/stings` | Пагинированный список жал |
+
+## WebSocket
+
+Подключение через **socket.io-client** (не обычный HTTP URL).
+
+После connect отправь подписку на регион:
+
+```json
+{ "type": "subscribe:region", "payload": { "swLat": 53.9, "swLng": 30.3, "neLat": 54.0, "neLng": 30.4 } }
 ```
 
-На macOS / Linux замените `^` на `\`.
+События сервера — на канале `message`: `{ "type": "sting:created", "payload": { ... } }`.
+
+### Быстрая проверка из терминала
+
+```powershell
+# PowerShell — без угловых скобок вокруг токена
+npm run ws:test -- eyJhbGciOiJIUzI1NiIs...
+```
+
+Или через `.env`:
+
+```powershell
+$env:WS_TEST_TOKEN="eyJ..."
+npm run ws:test
+```
+
+Опционально — bbox: `WS_TEST_SW_LAT`, `WS_TEST_SW_LNG`, `WS_TEST_NE_LAT`, `WS_TEST_NE_LNG`.
+
+## Проверка REST
+
+### Регистрация
+
+```powershell
+curl -X POST http://localhost:3000/api/v1/auth/register `
+  -H "Content-Type: application/json" `
+  -d '{"email":"dev@example.com","password":"password123","username":"devuser"}'
+```
 
 ### Текущий пользователь
 
-```bash
-curl http://localhost:3000/api/v1/auth/me ^
-  -H "Authorization: Bearer <accessToken>"
+```powershell
+curl http://localhost:3000/api/v1/auth/me `
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIs..."
+```
+
+### Загрузка аватара
+
+```powershell
+curl -X POST http://localhost:3000/api/v1/auth/me/avatar `
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIs..." `
+  -F "avatar=@C:\path\to\photo.jpg"
 ```
 
 `accessToken` берётся из ответа `/auth/register` или `/auth/login`.
 
-## MongoDB Compass
+## Переменные окружения
 
-Строка подключения:
+Полный список — в [`.env.example`](./.env.example). Основные:
+
+| Переменная | Назначение |
+|------------|------------|
+| `MONGO_URI` | Строка подключения MongoDB |
+| `JWT_ACCESS_SECRET` | Секрет для access JWT |
+| `BASE_URL` | Публичный URL API (для URL фото при `STORAGE_DRIVER=local`) |
+| `STORAGE_DRIVER` | `local` или `r2` |
+| `HIVE_RADIUS_M` | Радиус кластеризации (150) |
+| `HIVE_ACTIVATION_THRESHOLD` | Порог создания улья (3) |
+| `STING_RATE_LIMIT_MAX` | Лимит публикаций в час (10) |
+
+## MongoDB Compass
 
 ```
 mongodb://sting:sting_dev_password@localhost:27018/sting_app?authSource=admin
 ```
 
-База данных: **`sting_app`**
-
-Коллекции после работы с API:
+База: **`sting_app`**
 
 | Коллекция | Содержимое |
 |-----------|------------|
@@ -126,31 +215,33 @@ mongodb://sting:sting_dev_password@localhost:27018/sting_app?authSource=admin
 | Команда | Описание |
 |---------|----------|
 | `npm run dev` | Запуск с hot-reload |
+| `npm run ws:test -- <token>` | Проверка Socket.io |
 | `npm run build` | Компиляция TypeScript → `dist/` |
-| `npm start` | Запуск скомпилированного сервера |
+| `npm start` | Запуск production-сборки |
 | `docker compose up -d` | Запустить MongoDB |
 | `docker compose down` | Остановить MongoDB |
-| `docker compose logs mongo` | Логи MongoDB |
 
 ## Структура проекта
 
 ```
-server.ts              # Точка входа
+server.ts                 # Точка входа
+scripts/ws-test.ts        # Тест WebSocket
 src/
-  app.ts               # Express-приложение
-  config/              # env, подключение к БД
-  models/              # Mongoose-схемы
-  routes/              # Маршруты
-  controllers/         # HTTP-слой
-  services/            # Бизнес-логика
-  middleware/          # auth, errors, upload
-  validators/          # express-validator
-uploads/               # Локальное хранилище фото (dev)
-docker-compose.yml     # MongoDB для разработки
-openapi.yaml           # Спецификация API
+  app.ts                  # Express-приложение
+  config/                 # env, db
+  models/                 # User, RefreshToken, Sting, Hive
+  routes/                 # auth, stings, hives
+  controllers/
+  services/               # бизнес-логика, storage, validation
+  middleware/             # auth, upload, rate-limit, errors
+  validators/
+  sockets/realtime.ts     # Socket.io
+  types/
+  utils/
+uploads/                  # Локальное хранилище (dev)
+docker-compose.yml
+openapi.yaml
 ```
-
-Подробнее об архитектуре — в [BACKEND_ARCHITECTURE.md](./BACKEND_ARCHITECTURE.md).
 
 ## Частые проблемы
 
@@ -162,9 +253,13 @@ openapi.yaml           # Спецификация API
 
 Измени `PORT` в `.env` или останови процесс, занимающий порт.
 
+### `Ошибка в синтаксисе команды` (PowerShell)
+
+Не оборачивай токен в `<` и `>` — это перенаправление в PowerShell. Передавай токен как обычный аргумент.
+
 ### Docker не запускается
 
-Убедись, что Docker Desktop запущен. На Windows может потребоваться включить WSL2.
+Убедись, что Docker Desktop запущен. На Windows может потребоваться WSL2.
 
 ### Локальная MongoDB на порту 27017
 

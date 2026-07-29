@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import env, { isR2Configured } from '../config/env';
 import { UploadedImageUrls } from '../types/sting';
 import { AppError } from '../utils/AppError';
@@ -85,4 +85,60 @@ export async function uploadStingImages(
     uploadToLocal(`${id}_thumb.jpg`, thumbnailBuffer),
   ]);
   return { imageUrl, thumbnailUrl };
+}
+
+function buildAvatarKey(userId: string): string {
+  return `avatars/${userId}.jpg`;
+}
+
+function buildLocalAvatarFilename(userId: string): string {
+  return `avatars/${userId}.jpg`;
+}
+
+export async function uploadAvatarImage(userId: string, buffer: Buffer): Promise<string> {
+  const useR2 = env.storageDriver === 'r2';
+
+  if (useR2 && !isR2Configured()) {
+    throw new AppError(
+      500,
+      'STORAGE_NOT_CONFIGURED',
+      'R2 storage выбран, но переменные окружения не заданы',
+    );
+  }
+
+  if (useR2) {
+    return uploadToR2(buildAvatarKey(userId), buffer);
+  }
+
+  return uploadToLocal(buildLocalAvatarFilename(userId), buffer);
+}
+
+async function deleteFromR2(key: string): Promise<void> {
+  await getR2Client().send(
+    new DeleteObjectCommand({
+      Bucket: env.r2BucketName,
+      Key: key,
+    }),
+  );
+}
+
+async function deleteFromLocal(filename: string): Promise<void> {
+  const filePath = path.join(env.uploadDir, filename);
+  if (fs.existsSync(filePath)) {
+    await fs.promises.unlink(filePath);
+  }
+}
+
+export async function deleteAvatarImage(userId: string): Promise<void> {
+  const useR2 = env.storageDriver === 'r2';
+
+  if (useR2) {
+    if (!isR2Configured()) {
+      return;
+    }
+    await deleteFromR2(buildAvatarKey(userId));
+    return;
+  }
+
+  await deleteFromLocal(buildLocalAvatarFilename(userId));
 }

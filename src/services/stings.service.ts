@@ -1,10 +1,16 @@
 import env from '../config/env';
-import Hive, { IHive } from '../models/Hive';
+import Hive from '../models/Hive';
 import Sting, { ISting } from '../models/Sting';
+import {
+  emitHiveUpdated,
+  emitStingCreated,
+  emitStingReaction,
+} from '../sockets/realtime';
 import { assignStingToHive } from './clustering.service';
-import { areChangeStreamsActive, handleStingRemoved } from './hive-cleanup.service';
+import { areChangeStreamsActive, notifyStingRemoved } from './hive-cleanup.service';
 import { processStingPhoto } from './image.service';
 import { uploadStingImages } from './storage.service';
+import { validateStingSubmission } from './sting-validation.service';
 import {
   BboxQuery,
   CreateStingInput,
@@ -14,34 +20,22 @@ import {
 } from '../types/sting';
 import { AppError } from '../utils/AppError';
 import { bboxToGeoBox, coordinatesToGeoPoint } from '../utils/geo';
-
-function toPublicSting(sting: ISting): PublicSting {
-  return {
-    id: sting.id,
-    authorId: String(sting.authorId),
-    imageUrl: sting.imageUrl,
-    thumbnailUrl: sting.thumbnailUrl,
-    location: coordinatesToGeoPoint(sting.location.coordinates),
-    hiveId: sting.hiveId ? String(sting.hiveId) : null,
-    createdAt: sting.createdAt.toISOString(),
-    expiresAt: sting.expiresAt.toISOString(),
-    reactionsCount: sting.reactionsCount,
-  };
-}
-
-function toPublicHive(hive: IHive): PublicHive {
-  return {
-    id: hive.id,
-    center: coordinatesToGeoPoint(hive.center.coordinates),
-    radiusM: hive.radiusM,
-    activeStingsCount: hive.activeStingsCount,
-    createdAt: hive.createdAt.toISOString(),
-    updatedAt: hive.updatedAt.toISOString(),
-  };
-}
+import { toPublicHive, toPublicSting } from '../utils/sting.mapper';
 
 function buildExpiresAt(createdAt: Date): Date {
   return new Date(createdAt.getTime() + env.stingTtlHours * 60 * 60 * 1000);
+}
+
+async function emitCreateEvents(sting: ISting): Promise<void> {
+  if (sting.hiveId) {
+    const hive = await Hive.findById(sting.hiveId);
+    if (hive) {
+      emitHiveUpdated(toPublicHive(hive));
+    }
+    return;
+  }
+
+  emitStingCreated(toPublicSting(sting));
 }
 
 export async function findNearby(bbox: BboxQuery): Promise<{ stings: PublicSting[]; hives: PublicHive[] }> {
@@ -78,6 +72,14 @@ export async function createSting(input: CreateStingInput): Promise<{ sting: Pub
     }
   }
 
+  await validateStingSubmission({
+    lat: input.lat,
+    lng: input.lng,
+    accuracyM: input.accuracyM,
+    capturedAt: input.capturedAt,
+    photoBuffer: input.photoBuffer,
+  });
+
   const processed = await processStingPhoto(input.photoBuffer);
   const { imageUrl, thumbnailUrl } = await uploadStingImages(processed.original, processed.thumbnail);
   const createdAt = new Date();
@@ -97,6 +99,8 @@ export async function createSting(input: CreateStingInput): Promise<{ sting: Pub
   });
 
   const clustered = await assignStingToHive(sting);
+  await emitCreateEvents(clustered);
+
   return { sting: toPublicSting(clustered) };
 }
 
@@ -117,11 +121,14 @@ export async function deleteSting(id: string, userId: string): Promise<void> {
     throw new AppError(403, 'FORBIDDEN', 'Нельзя удалить чужое жало');
   }
 
+  const [lng, lat] = sting.location.coordinates;
   const hiveId = sting.hiveId;
+  const stingId = sting.id;
+
   await sting.deleteOne();
 
   if (!areChangeStreamsActive()) {
-    await handleStingRemoved(hiveId);
+    await notifyStingRemoved(stingId, hiveId, lat, lng);
   }
 }
 
@@ -138,6 +145,9 @@ export async function addReaction(
   if (!sting) {
     throw new AppError(404, 'STING_NOT_FOUND', 'Жало не найдено');
   }
+
+  const location = coordinatesToGeoPoint(sting.location.coordinates);
+  emitStingReaction(sting.id, sting.reactionsCount, location.lat, location.lng);
 
   return { reactionsCount: sting.reactionsCount };
 }

@@ -158,6 +158,52 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /auth/me/avatar:
+    post:
+      tags: [auth]
+      summary: Загрузка или замена аватара
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [avatar]
+              properties:
+                avatar:
+                  type: string
+                  format: binary
+                  description: JPEG, максимум 2 МБ
+      responses:
+        '200':
+          description: Аватар обновлён
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [auth]
+      summary: Удаление аватара
+      responses:
+        '200':
+          description: Аватар удалён
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   # ---------------------------------------------------------------------
   # STINGS
   # ---------------------------------------------------------------------

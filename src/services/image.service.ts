@@ -15,3 +15,11 @@ export async function processStingPhoto(buffer: Buffer): Promise<ProcessedPhoto>
 
   return { original, thumbnail };
 }
+
+export async function processAvatar(buffer: Buffer): Promise<Buffer> {
+  return sharp(buffer)
+    .rotate()
+    .resize({ width: env.avatarSize, height: env.avatarSize, fit: 'cover' })
+    .jpeg({ quality: env.avatarQuality })
+    .toBuffer();
+}

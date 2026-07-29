@@ -1,9 +1,11 @@
 # Sting App — Архитектура backend
 
-Версия: 0.3
-Стек: Node.js + Express + Mongoose (MongoDB) + Socket.io
+Версия: **0.4** (актуально на MVP, pre-production)  
+Стек: **Node.js + Express + TypeScript + Mongoose (MongoDB) + Socket.io**
 
 Этот документ заменяет собой предыдущую версию `BACKEND_ARCHITECTURE.md` (была на NestJS + Prisma + PostgreSQL/PostGIS) и отдельный `DB_SCHEMA.md`. Причина смены стека: разрабатывает один человек, приоритет — минимум абстракций и низкий порог входа над гибкостью и мощью инструментов.
+
+Контракты API и WebSocket для frontend — в [TECH_DOCS.md](./TECH_DOCS.md) и [openapi.yaml](./openapi.yaml).
 
 ---
 
@@ -15,76 +17,107 @@
 4. [Модели данных (Mongoose)](#4-модели-данных-mongoose)
 5. [Геозапросы](#5-геозапросы)
 6. [Кластеризация ульев](#6-кластеризация-ульев)
-7. [Истечение жал (TTL)](#7-истечение-жал-ttl)
+7. [Истечение жал (TTL) и очистка ульев](#7-истечение-жал-ttl-и-очистка-ульев)
 8. [Реальное время (WebSocket)](#8-реальное-время-websocket)
-9. [Инфраструктура и деплой](#9-инфраструктура-и-деплой)
-10. [Что теряем при переходе с PostgreSQL/PostGIS](#10-что-теряем-при-переходе-с-postgresqlpostgis)
+9. [Хранилище файлов](#9-хранилище-файлов)
+10. [Безопасность публикации](#10-безопасность-публикации)
+11. [Реализованные API-модули](#11-реализованные-api-модули)
+12. [Инфраструктура и деплой](#12-инфраструктура-и-деплой)
+13. [Что теряем при переходе с PostgreSQL/PostGIS](#13-что-теряем-при-переходе-с-postgresqlpostgis)
 
 ---
 
 ## 1. Выбор стека и что изменилось
 
-**Node.js + Express + Mongoose + MongoDB** вместо NestJS + Prisma + PostgreSQL/PostGIS.
+**Node.js + Express + TypeScript + Mongoose + MongoDB** вместо NestJS + Prisma + PostgreSQL/PostGIS.
 
 | Было | Стало | Почему так проще |
 |---|---|---|
-| Классы с `@Injectable()`, DI через конструктор | Обычные функции, `require`/`import` напрямую | Не нужно понимать, что такое dependency injection, чтобы прочитать код |
-| Guards (`@UseGuards`, `@Public()`) | Обычная middleware-функция `requireAuth(req, res, next)` | Видно прямо в файле роутов, какой путь чем защищён |
+| Классы с `@Injectable()`, DI через конструктор | Обычные функции, `import` напрямую | Не нужно понимать dependency injection, чтобы прочитать код |
+| Guards (`@UseGuards`, `@Public()`) | Middleware `requireAuth(req, res, next)` | Видно прямо в файле роутов, какой путь чем защищён |
 | Decorators на методах (`@Post()`, `@Body()`) | `router.post('/login', authController.login)` | Весь список путей — в одном читаемом файле |
 | Модули (`@Module`, imports/exports/providers) | Модульность через файловую структуру | Меньше фреймворковой магии поверх обычного JS |
-| Prisma + raw SQL для geo (`ST_DWithin`, `$queryRaw`) | Mongoose с `2dsphere`-индексом, `$near`/`$geoWithin` | Геозапросы — простые методы, без SQL |
-| Cron-джоба на истечение TTL (`expire-stings.job.ts`) | Нативный TTL-индекс MongoDB | Документ удаляется сам, кода не нужно писать |
+| Prisma + raw SQL для geo | Mongoose с `2dsphere`, `$near`/`$geoWithin` | Геозапросы — простые методы, без SQL |
+| Cron-джоба на истечение TTL | Нативный TTL-индекс MongoDB | Документ удаляется сам, отдельный cron не нужен |
 
 ---
 
 ## 2. Структура проекта
 
 ```
-sting-backend/
-├── server.js                      # точка входа: подключение к БД → app.listen()
+hive-backend-nodejs/
+├── server.ts                      # точка входа: БД → HTTP-сервер → Socket.io
+├── scripts/
+│   └── ws-test.ts                 # npm run ws:test — проверка WebSocket из терминала
 ├── src/
-│   ├── app.js                     # сборка Express-приложения
+│   ├── app.ts                     # сборка Express-приложения, маршруты /api/v1/*
 │   │
 │   ├── config/
-│   │   ├── db.js                  # подключение к MongoDB
-│   │   └── env.js                 # чтение и валидация переменных окружения
+│   │   ├── db.ts                  # подключение к MongoDB
+│   │   └── env.ts                 # переменные окружения
 │   │
 │   ├── models/                    # Mongoose-схемы
-│   │   ├── User.js
-│   │   ├── RefreshToken.js
-│   │   ├── Sting.js                # добавится на шаге "модуль stings"
-│   │   └── Hive.js                 # добавится на шаге "модуль stings"
+│   │   ├── User.ts
+│   │   ├── RefreshToken.ts
+│   │   ├── Sting.ts
+│   │   └── Hive.ts
 │   │
-│   ├── routes/                    # только объявление путей
-│   │   ├── auth.routes.js
-│   │   ├── stings.routes.js        # следующий шаг
-│   │   └── hives.routes.js         # следующий шаг
+│   ├── routes/
+│   │   ├── auth.routes.ts
+│   │   ├── stings.routes.ts
+│   │   └── hives.routes.ts
 │   │
-│   ├── controllers/               # разбирают req, вызывают services, формируют res
-│   │   └── auth.controller.js
+│   ├── controllers/
+│   │   ├── auth.controller.ts
+│   │   ├── stings.controller.ts
+│   │   └── hives.controller.ts
 │   │
-│   ├── services/                  # бизнес-логика
-│   │   ├── auth.service.js
-│   │   └── clustering.service.js   # следующий шаг
+│   ├── services/
+│   │   ├── auth.service.ts
+│   │   ├── stings.service.ts
+│   │   ├── hives.service.ts
+│   │   ├── clustering.service.ts
+│   │   ├── hive-cleanup.service.ts
+│   │   ├── sting-validation.service.ts   # анти-спуфинг
+│   │   ├── storage.service.ts            # local / Cloudflare R2
+│   │   └── image.service.ts              # sharp: thumbnail, avatar
 │   │
 │   ├── middleware/
-│   │   ├── auth.middleware.js      # проверка JWT
-│   │   ├── error.middleware.js     # единый формат ошибок
-│   │   └── validate.middleware.js  # обработка результатов express-validator
+│   │   ├── auth.middleware.ts
+│   │   ├── error.middleware.ts
+│   │   ├── validate.middleware.ts
+│   │   ├── upload.middleware.ts
+│   │   └── rate-limit.middleware.ts
 │   │
 │   ├── validators/
-│   │   └── auth.validators.js      # правила валидации тела запроса
+│   │   ├── auth.validators.ts
+│   │   ├── stings.validators.ts
+│   │   └── hives.validators.ts
 │   │
 │   ├── utils/
-│   │   └── AppError.js             # класс ошибки с кодом/сообщением
+│   │   ├── AppError.ts
+│   │   ├── geo.ts
+│   │   └── sting.mapper.ts
+│   │
+│   ├── types/
+│   │   ├── sting.ts
+│   │   ├── realtime.ts
+│   │   ├── express.d.ts
+│   │   └── socket.d.ts
 │   │
 │   └── sockets/
-│       └── realtime.js             # Socket.io — следующий шаг
+│       └── realtime.ts            # Socket.io, path /ws
 │
-├── docker-compose.yml               # mongo для локальной разработки
+├── uploads/                       # локальное хранилище (STORAGE_DRIVER=local)
+├── docker-compose.yml             # MongoDB для разработки (порт 27018)
+├── openapi.yaml
+├── TECH_DOCS.md
 ├── .env.example
+├── tsconfig.json
 └── package.json
 ```
+
+Сборка: `npm run build` → `dist/`. Dev: `npm run dev` (tsx watch).
 
 ---
 
@@ -93,12 +126,12 @@ sting-backend/
 | Слой | Ответственность |
 |---|---|
 | **routes** | Только маппинг `путь + HTTP-метод → middleware-цепочка → контроллер`. Ноль логики |
-| **middleware** (validators + auth + error) | Проверки, не специфичные для конкретного эндпоинта: валидация тела, аутентификация, единый формат ошибки |
-| **controllers** | Забирает данные из `req`, вызывает нужный `service`, формирует HTTP-ответ (`res.status().json()`). Не содержит бизнес-правил |
-| **services** | Вся бизнес-логика: хеширование пароля, ротация refresh-токена, кластеризация ульев и т.д. Ничего не знает про `req`/`res` — их можно вызвать из теста напрямую |
-| **models** | Mongoose-схемы: структура документа, индексы, валидация на уровне поля |
+| **middleware** | Валидация, JWT, upload, rate limit, единый формат ошибки |
+| **controllers** | Забирает данные из `req`, вызывает `service`, формирует HTTP-ответ. Без бизнес-правил |
+| **services** | Вся бизнес-логика. Ничего не знает про `req`/`res` |
+| **models** | Mongoose-схемы: структура документа, индексы |
 
-Поток запроса всегда идёт в одну сторону: `routes → middleware → controller → service → model`. Ошибка на любом шаге пробрасывается через `next(err)` до `error.middleware.js`, который всегда подключается последним в `app.js`.
+Поток запроса: `routes → middleware → controller → service → model`. Ошибки — через `next(err)` в `error.middleware.ts` (подключается последним в `app.ts`).
 
 ---
 
@@ -106,68 +139,60 @@ sting-backend/
 
 ### 4.1 `User`
 
-```js
-const userSchema = new mongoose.Schema({
-  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-  passwordHash: { type: String, required: true },
-  username: { type: String, required: true, unique: true, trim: true },
-  avatarUrl: { type: String, default: null },
-}, { timestamps: true }); // createdAt/updatedAt — автоматически
+```ts
+{
+  email: string;          // unique, lowercase
+  passwordHash: string;
+  username: string;       // unique
+  avatarUrl: string | null;
+  createdAt, updatedAt   // timestamps
+}
 ```
 
 ### 4.2 `RefreshToken`
 
-```js
-const refreshTokenSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  tokenHash: { type: String, required: true, unique: true },
-  deviceInfo: { type: String, default: null },
-  expiresAt: { type: Date, required: true },
-  revokedAt: { type: Date, default: null },
-}, { timestamps: { createdAt: 'issuedAt', updatedAt: false } });
-
-refreshTokenSchema.index({ userId: 1 });
-refreshTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // TTL
+```ts
+{
+  userId: ObjectId;
+  tokenHash: string;      // SHA-256 от refresh-токена, unique
+  deviceInfo: string | null;
+  expiresAt: Date;        // TTL-индекс
+  revokedAt: Date | null;
+  issuedAt: Date;         // createdAt переименован
+}
 ```
 
-### 4.3 `Sting` (следующий шаг, ориентир на будущее)
+### 4.3 `Sting`
 
-```js
-const stingSchema = new mongoose.Schema({
-  authorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  hiveId: { type: mongoose.Schema.Types.ObjectId, ref: 'Hive', default: null },
-  imageUrl: { type: String, required: true },
-  thumbnailUrl: { type: String, required: true },
-  location: {
-    type: { type: String, enum: ['Point'], required: true },
-    coordinates: { type: [Number], required: true }, // [lng, lat] — именно в этом порядке
-  },
-  accuracyM: { type: Number, default: null },
-  capturedAt: { type: Date, required: true },
-  expiresAt: { type: Date, required: true },
-  reactionsCount: { type: Number, default: 0 },
-}, { timestamps: true });
-
-stingSchema.index({ location: '2dsphere' });
-stingSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // автоудаление — TTL заменяет весь expire-джоб
-stingSchema.index({ authorId: 1, createdAt: -1 });
-stingSchema.index({ hiveId: 1 }, { sparse: true });
+```ts
+{
+  authorId: ObjectId;
+  hiveId: ObjectId | null;
+  imageUrl, thumbnailUrl: string;
+  location: { type: 'Point', coordinates: [lng, lat] };
+  accuracyM: number | null;
+  capturedAt: Date;
+  expiresAt: Date;        // TTL-индекс
+  reactionsCount: number;
+  idempotencyKey: string | null;  // unique sparse (authorId + key)
+  createdAt, updatedAt
+}
 ```
 
-### 4.4 `Hive` (следующий шаг)
+Индексы: `2dsphere` на `location`, TTL на `expiresAt`, `{ authorId, createdAt }`, sparse `{ hiveId }`, unique sparse `{ authorId, idempotencyKey }`.
 
-```js
-const hiveSchema = new mongoose.Schema({
-  center: {
-    type: { type: String, enum: ['Point'], required: true },
-    coordinates: { type: [Number], required: true },
-  },
-  radiusM: { type: Number, default: 150 },
-  activeStingsCount: { type: Number, default: 0 },
-}, { timestamps: true });
+### 4.4 `Hive`
 
-hiveSchema.index({ center: '2dsphere' });
+```ts
+{
+  center: { type: 'Point', coordinates: [lng, lat] };
+  radiusM: number;              // default 150, из HIVE_RADIUS_M
+  activeStingsCount: number;
+  createdAt, updatedAt
+}
 ```
+
+Индекс: `2dsphere` на `center`.
 
 ---
 
@@ -175,20 +200,10 @@ hiveSchema.index({ center: '2dsphere' });
 
 **Bounding box карты** (`GET /stings/nearby`):
 
-```js
-Sting.find({
-  location: {
-    $geoWithin: {
-      $box: [
-        [swLng, swLat],
-        [neLng, neLat],
-      ],
-    },
-  },
-});
-```
+- Жала: `$geoWithin` + `$box`, `expiresAt > now`, `hiveId: null` (одиночные точки)
+- Ульи: `$geoWithin` + `$box`, `activeStingsCount > 0`
 
-**Радиус от точки** (используется при кластеризации — "есть ли уже улей рядом"):
+**Радиус от точки** (кластеризация):
 
 ```js
 Hive.findOne({
@@ -201,78 +216,168 @@ Hive.findOne({
 });
 ```
 
-Оба запроса используют `2dsphere`-индекс автоматически — отдельно ничего оптимизировать не нужно, в отличие от ручных `ST_MakeEnvelope`/`ST_DWithin` в PostGIS-версии.
-
 ---
 
 ## 6. Кластеризация ульев
 
-Логика остаётся той же, что была спроектирована для PostgreSQL (событийная, при каждой публикации), просто через Mongoose-запросы вместо raw SQL:
+Реализовано в `clustering.service.ts`, вызывается из `stings.service.ts` после сохранения жала:
 
 ```
 При публикации нового Sting:
-  1. Ищем существующий Hive в радиусе HIVE_RADIUS_M от новой точки ($near)
+  1. Ищем Hive в радиусе HIVE_RADIUS_M ($near)
      → нашли: attach hiveId, activeStingsCount += 1
   2. Не нашли:
-     а. Считаем активные Sting без hiveId в радиусе HIVE_RADIUS_M ($geoWithin/$near)
-     б. Если количество (включая новый) >= HIVE_ACTIVATION_THRESHOLD:
-        создаём Hive с центром = центроид этих точек,
-        присваиваем hiveId всем вовлечённым Sting разом
-     в. Иначе — hiveId остаётся null
+     а. Считаем активные Sting без hiveId в радиусе
+     б. Если count >= HIVE_ACTIVATION_THRESHOLD:
+        создаём Hive (центроид точек), присваиваем hiveId всем
+     в. Иначе hiveId остаётся null
 ```
-
-Реализуется как `clustering.service.js`, вызываемый из `stings.service.js` после сохранения нового жала — те же шаги 5.1, что были в предыдущей версии документа, просто без SQL-функций.
 
 ---
 
-## 7. Истечение жал (TTL)
+## 7. Истечение жал (TTL) и очистка ульев
 
-Самое существенное упрощение относительно PostgreSQL-версии: **не нужен `expire-stings.job.ts`, не нужен cron вообще**.
+**TTL жала:** индекс на `expiresAt` — MongoDB удаляет документ сам (~60 с задержки).
 
-TTL-индекс на `expiresAt` (см. модель `Sting` выше) заставляет MongoDB самостоятельно физически удалить документ, когда наступает указанное время. Фоновый процесс MongoDB, отвечающий за это, проверяет коллекции примерно раз в 60 секунд — то есть реальное удаление может отстать от `expiresAt` на несколько десятков секунд. Для продукта, где "время жизни" и так не претендует на секундную точность (весь смысл — "около 4 часов"), это не проблема.
+**Очистка ульев** (`hive-cleanup.service.ts`):
 
-**Что по-прежнему нужно делать вручную:**
-- Пересчёт `activeStingsCount` у ульев и удаление опустевших ульев — TTL удаляет только `Sting`, но не обновляет счётчик на связанном `Hive` и не удаляет сам `Hive`, если тот опустел. Для этого можно подписаться на MongoDB Change Streams (слушать удаления в коллекции `stings` и реагировать) — это следующий шаг при реализации модуля `hives`, отдельно опишем при написании кода.
+| Среда | Механизм |
+|---|---|
+| **MongoDB Atlas** (replica set) | Change Streams на коллекции `stings` — реакция на delete |
+| **Локальный Docker** (standalone) | Fallback: `reconcileHives()` каждые `HIVE_CLEANUP_INTERVAL_MS` (60 с) |
+
+При удалении/истечении жала:
+- декремент `activeStingsCount`
+- если 0 — удаление Hive, WS-событие `hive:dissolved`
+- иначе — `hive:updated`
+- всегда — `sting:expired`
+
+Ручное удаление жала (`DELETE /stings/:id`) вызывает `notifyStingRemoved`, если Change Streams неактивны.
 
 ---
 
 ## 8. Реальное время (WebSocket)
 
-**Socket.io** (решено ранее) — критичен fallback на long-polling для нестабильного мобильного интернета.
+**Socket.io**, path **`/ws`**, auth: `?token=<accessToken>` (JWT access).
 
-Логика та же, что в предыдущей версии документа: клиент подписывается на bbox своей области карты (`subscribe:region`), сервер хранит маппинг `socketId → bbox` **в памяти процесса** (`Map`), не в Redis — при одном инстансе распределённое состояние не нужно. Как только появится необходимость в нескольких инстансах — это первое, что переезжает в Redis (см. таблицу апгрейда в разделе 9.4 предыдущей версии документа — тот же принцип действует и здесь).
+Клиент отправляет JSON на канал `message`:
 
----
+| Client → Server | Назначение |
+|---|---|
+| `subscribe:region` | Подписка на bbox карты |
+| `unsubscribe:region` | Отписка |
+| `ping` | Keepalive → ответ `pong` |
 
-## 9. Инфраструктура и деплой
+| Server → Client | Когда |
+|---|---|
+| `sting:created` | Новое одиночное жало в регионе |
+| `sting:expired` | Жало истекло или удалено |
+| `hive:updated` | Изменился счётчик улья |
+| `hive:dissolved` | Улей растворился |
+| `sting:reaction` | Обновился счётчик реакций |
 
-Контекст не изменился: один разработчик, минимальный бюджет.
+Маппинг `socketId → bbox` хранится **в памяти процесса** (`Map`). Для нескольких инстансов потребуется Redis adapter.
 
-### 9.1 Хостинг API
-
-**Railway или Render** — как и раньше: простое развёртывание из Git, поддержка long-lived WebSocket-соединений без ручной настройки балансировщика, usage-based тарификация.
-
-### 9.2 База данных
-
-**MongoDB Atlas, бесплатный тариф M0** — управляемый MongoDB-кластер с 512MB хранилища, этого достаточно на весь период разработки и раннего тестирования. Не нужно самостоятельно администрировать MongoDB (бэкапы, апдейты) — важно при одном разработчике. При росте — апгрейд тарифа Atlas без смены кода (просто меняется `MONGO_URI`).
-
-### 9.3 Хранилище фото
-
-Без изменений от предыдущей версии — **Cloudflare R2** (S3-совместимый API, без платы за egress).
-
-### 9.4 Что убрано из инфраструктуры
-
-Redis по-прежнему не используется на этом этапе — теперь по двум причинам одновременно: один инстанс (как и раньше) **и** TTL/очистка теперь встроены в саму БД, а не требуют отдельной очереди задач.
+Проверка из терминала: `npm run ws:test -- <accessToken>`.
 
 ---
 
-## 10. Что теряем при переходе с PostgreSQL/PostGIS
+## 9. Хранилище файлов
 
-Честно про компромиссы, чтобы решение было осознанным:
+Переключатель: `STORAGE_DRIVER=local | r2`.
 
-- **Точность TTL** — MongoDB удаляет документ по TTL-индексу с задержкой до ~60 секунд, Postgres-версия с explicit cron была точнее (задержка = интервал джобы, тоже ~60с на практике — то есть на деле разница небольшая).
-- **Сложная геоаналитика** — PostGIS умеет полигоны, пересечения сложных форм, топологические операции. MongoDB geospatial (`2dsphere`) прекрасно покрывает "точка в радиусе"/"точка в bbox", что нам и нужно, но не годится, если в будущем понадобится что-то сложнее (например, "жала внутри границ конкретного района города" по произвольному полигону — тоже вообще-то поддерживается через `$geoWithin` с `$geometry` полигоном, так что и это не жёсткое ограничение).
-- **Строгая схема и внешние ключи** — Postgres/Prisma гарантируют целостность на уровне БД (нельзя вставить `Sting` с несуществующим `authorId`). MongoDB такого не проверяет сама — целостность нужно поддерживать в коде сервисов (что мы и делаем, но это ответственность разработчика, не БД).
-- **Транзакции** — MongoDB поддерживает multi-document transactions, но менее естественно, чем Postgres; для текущей модели данных (публикация жала — по сути одна операция записи) это не создаёт проблем.
+| Тип | Local | R2 |
+|---|---|---|
+| Фото жала | `uploads/{uuid}.jpg` | `stings/{uuid}.jpg` |
+| Thumbnail | `uploads/{uuid}_thumb.jpg` | `stings/{uuid}_thumb.jpg` |
+| Аватар | `uploads/avatars/{userId}.jpg` | `avatars/{userId}.jpg` |
 
-Ничего из этого не блокирует проект на текущем масштабе — но стоит держать в голове, если продукт вырастет в сторону куда более сложной геологики.
+Local: раздача через `express.static` на `/uploads`. URL строится из `BASE_URL`.
+
+Обработка: `sharp` — JPEG, thumbnail 400px, аватар 256×256 crop.
+
+---
+
+## 10. Безопасность публикации
+
+`sting-validation.service.ts` — вызывается в `createSting` до загрузки фото.
+
+| Проверка | Отказ |
+|---|---|
+| GPS `(0,0)`, `accuracy` вне `[MIN, MAX]` | `SUSPICIOUS_GPS` |
+| `capturedAt` vs серверное время > tolerance (2 мин) | `CAPTURED_AT_MISMATCH` |
+| EXIF datetime ≠ `capturedAt` | `EXIF_MISMATCH` |
+| EXIF GPS далеко от заявленных координат | `EXIF_GPS_MISMATCH` |
+
+Если EXIF отсутствует (часто на Android) — проверяются только GPS и время.
+
+**Rate limit:** `express-rate-limit` на `POST /stings` — `STING_RATE_LIMIT_MAX` запросов за `STING_RATE_LIMIT_WINDOW_MS` на пользователя → `429 RATE_LIMITED`.
+
+**Idempotency:** заголовок `Idempotency-Key` — повторный запрос возвращает существующее жало.
+
+---
+
+## 11. Реализованные API-модули
+
+Префикс: **`/api/v1`**. Полная спецификация — [openapi.yaml](./openapi.yaml).
+
+### Auth
+
+| Метод | Путь |
+|---|---|
+| POST | `/auth/register` |
+| POST | `/auth/login` |
+| POST | `/auth/refresh` |
+| POST | `/auth/logout` |
+| GET | `/auth/me` |
+| POST | `/auth/me/avatar` — multipart, поле `avatar` (JPEG, ≤2 МБ) |
+| DELETE | `/auth/me/avatar` |
+
+### Stings
+
+| Метод | Путь |
+|---|---|
+| GET | `/stings/nearby?swLat&swLng&neLat&neLng` |
+| POST | `/stings` — multipart: `photo`, `lat`, `lng`, `accuracy`, `capturedAt` |
+| GET | `/stings/:id` |
+| DELETE | `/stings/:id` |
+| POST | `/stings/:id/reactions` — `{ "type": "like" }` |
+
+### Hives
+
+| Метод | Путь |
+|---|---|
+| GET | `/hives/:id` — улей + все активные жала |
+| GET | `/hives/:id/stings?cursor&limit` — курсорная пагинация |
+
+---
+
+## 12. Инфраструктура и деплой
+
+**Статус:** MVP backend реализован локально. **Production deploy — следующий шаг.**
+
+| Компонент | Рекомендация |
+|---|---|
+| **API** | Railway или Render (Git deploy, WebSocket) |
+| **БД** | MongoDB Atlas M0+ (replica set → Change Streams) |
+| **Фото** | Cloudflare R2 (`STORAGE_DRIVER=r2`) |
+| **Redis** | Не используется (один инстанс) |
+
+Чеклист деплоя:
+1. Создать кластер Atlas, получить `MONGO_URI`
+2. Создать bucket R2, задать `R2_*` и `R2_PUBLIC_URL`
+3. Сгенерировать production `JWT_ACCESS_SECRET`
+4. Задать `BASE_URL=https://your-api.example.com`
+5. Deploy: `npm run build && npm start`
+6. Проверить REST + WebSocket + upload
+
+---
+
+## 13. Что теряем при переходе с PostgreSQL/PostGIS
+
+- **Точность TTL** — задержка до ~60 с (на практике сопоставимо с cron).
+- **Сложная геоаналитика** — `2dsphere` покрывает bbox и радиус; полигоны возможны через `$geoWithin`, но без богатства PostGIS.
+- **FK и строгая схема** — целостность в коде сервисов, не в БД.
+- **Транзакции** — для текущей модели (одна запись на публикацию) не критично.
+
+На текущем масштабе это не блокирует продукт.
