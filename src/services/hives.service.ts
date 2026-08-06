@@ -3,26 +3,35 @@ import Sting from '../models/Sting';
 import { PublicHive, PublicSting } from '../types/sting';
 import { AppError } from '../utils/AppError';
 import { toPublicHive, toPublicSting } from '../utils/sting.mapper';
+import { syncHiveDocument } from './hive-cleanup.service';
 
 const DEFAULT_PAGE_LIMIT = 20;
 const MAX_PAGE_LIMIT = 50;
 
 async function requireActiveHive(id: string): Promise<PublicHive> {
   const hive = await Hive.findById(id);
-  if (!hive || hive.activeStingsCount === 0) {
+  if (!hive) {
     throw new AppError(404, 'HIVE_NOT_FOUND', 'Улей не найден или растворился');
   }
-  return toPublicHive(hive);
+
+  const synced = await syncHiveDocument(hive);
+  if (!synced) {
+    throw new AppError(404, 'HIVE_NOT_FOUND', 'Улей не найден или растворился');
+  }
+
+  return toPublicHive(synced);
 }
 
 export async function getHiveById(id: string): Promise<{ hive: PublicHive; stings: PublicSting[] }> {
-  const hive = await requireActiveHive(id);
   const now = new Date();
 
   const stings = await Sting.find({
     hiveId: id,
     expiresAt: { $gt: now },
   }).sort({ createdAt: -1, _id: -1 });
+
+  const hive = await requireActiveHive(id);
+  hive.activeStingsCount = stings.length;
 
   return {
     hive,

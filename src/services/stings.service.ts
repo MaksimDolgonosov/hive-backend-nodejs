@@ -7,7 +7,7 @@ import {
   emitStingReaction,
 } from '../sockets/realtime';
 import { assignStingToHive } from './clustering.service';
-import { areChangeStreamsActive, notifyStingRemoved } from './hive-cleanup.service';
+import { areChangeStreamsActive, notifyStingRemoved, syncHiveDocument } from './hive-cleanup.service';
 import { processStingPhoto } from './image.service';
 import { uploadStingImages } from './storage.service';
 import { validateStingSubmission } from './sting-validation.service';
@@ -42,7 +42,7 @@ export async function findNearby(bbox: BboxQuery): Promise<{ stings: PublicSting
   const now = new Date();
   const box = bboxToGeoBox(bbox.swLng, bbox.swLat, bbox.neLng, bbox.neLat);
 
-  const [stings, hives] = await Promise.all([
+  const [stings, rawHives] = await Promise.all([
     Sting.find({
       location: { $geoWithin: { $box: box } },
       expiresAt: { $gt: now },
@@ -50,13 +50,17 @@ export async function findNearby(bbox: BboxQuery): Promise<{ stings: PublicSting
     }).sort({ createdAt: -1 }),
     Hive.find({
       center: { $geoWithin: { $box: box } },
-      activeStingsCount: { $gt: 0 },
+      activeStingsCount: { $gte: env.hiveActivationThreshold },
     }),
   ]);
 
+  const syncedHives = (
+    await Promise.all(rawHives.map((hive) => syncHiveDocument(hive, now)))
+  ).filter((hive): hive is NonNullable<typeof hive> => hive !== null);
+
   return {
     stings: stings.map(toPublicSting),
-    hives: hives.map(toPublicHive),
+    hives: syncedHives.map(toPublicHive),
   };
 }
 

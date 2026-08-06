@@ -25,6 +25,12 @@ export async function assignStingToHive(sting: ISting): Promise<ISting> {
   });
 
   if (existingHive) {
+    const newCount = existingHive.activeStingsCount + 1;
+
+    if (newCount < env.hiveActivationThreshold) {
+      return sting;
+    }
+
     sting.hiveId = existingHive._id;
     await sting.save();
     existingHive.activeStingsCount += 1;

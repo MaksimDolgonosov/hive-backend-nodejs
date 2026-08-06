@@ -5,7 +5,7 @@ import {
   emitStingExpired,
 } from '../sockets/realtime';
 import env from '../config/env';
-import Hive from '../models/Hive';
+import Hive, { IHive } from '../models/Hive';
 import Sting from '../models/Sting';
 import { coordinatesToGeoPoint } from '../utils/geo';
 import { toPublicHive } from '../utils/sting.mapper';
@@ -17,6 +17,43 @@ export function areChangeStreamsActive(): boolean {
   return changeStreamsActive;
 }
 
+/** Синхронизирует счётчик улья с фактическими активными жалами. Возвращает null, если улей распущен. */
+export async function syncHiveDocument(
+  hive: IHive,
+  now: Date = new Date(),
+): Promise<IHive | null> {
+  const activeCount = await Sting.countDocuments({
+    hiveId: hive._id,
+    expiresAt: { $gt: now },
+  });
+
+  if (activeCount === 0) {
+    const center = coordinatesToGeoPoint(hive.center.coordinates);
+    await hive.deleteOne();
+    emitHiveDissolved(String(hive._id), center.lat, center.lng);
+    return null;
+  }
+
+  if (activeCount < env.hiveActivationThreshold) {
+    const center = coordinatesToGeoPoint(hive.center.coordinates);
+    await Sting.updateMany(
+      { hiveId: hive._id, expiresAt: { $gt: now } },
+      { $set: { hiveId: null } },
+    );
+    await hive.deleteOne();
+    emitHiveDissolved(String(hive._id), center.lat, center.lng);
+    return null;
+  }
+
+  if (hive.activeStingsCount !== activeCount) {
+    hive.activeStingsCount = activeCount;
+    await hive.save();
+    emitHiveUpdated(toPublicHive(hive));
+  }
+
+  return hive;
+}
+
 export async function handleStingRemoved(
   hiveId: Types.ObjectId,
 ): Promise<'dissolved' | 'updated' | 'missing'> {
@@ -25,14 +62,11 @@ export async function handleStingRemoved(
     return 'missing';
   }
 
-  hive.activeStingsCount = Math.max(0, hive.activeStingsCount - 1);
-
-  if (hive.activeStingsCount === 0) {
-    await hive.deleteOne();
+  const synced = await syncHiveDocument(hive);
+  if (!synced) {
     return 'dissolved';
   }
 
-  await hive.save();
   return 'updated';
 }
 
@@ -69,32 +103,12 @@ export async function notifyStingRemoved(
   }
 }
 
-/** Пересчитывает activeStingsCount по фактическим жала́м — fallback без Change Streams. */
+/** Пересчитывает activeStingsCount по фактическим жала́м. */
 export async function reconcileHives(): Promise<void> {
   const now = new Date();
   const hives = await Hive.find();
 
-  await Promise.all(
-    hives.map(async (hive) => {
-      const activeCount = await Sting.countDocuments({
-        hiveId: hive._id,
-        expiresAt: { $gt: now },
-      });
-
-      if (activeCount === 0) {
-        const center = coordinatesToGeoPoint(hive.center.coordinates);
-        await hive.deleteOne();
-        emitHiveDissolved(String(hive._id), center.lat, center.lng);
-        return;
-      }
-
-      if (hive.activeStingsCount !== activeCount) {
-        hive.activeStingsCount = activeCount;
-        await hive.save();
-        emitHiveUpdated(toPublicHive(hive));
-      }
-    }),
-  );
+  await Promise.all(hives.map((hive) => syncHiveDocument(hive, now)));
 }
 
 async function enablePreImages(): Promise<void> {
@@ -139,15 +153,16 @@ function startPeriodicHiveCleanup(): void {
   }, env.hiveCleanupIntervalMs);
 
   console.log(
-    `Периодическая очистка ульев: каждые ${env.hiveCleanupIntervalMs / 1000}с (fallback без replica set)`,
+    `Периодическая синхронизация ульев: каждые ${env.hiveCleanupIntervalMs / 1000}с`,
   );
 }
 
 export async function startStingDeletionWatcher(): Promise<void> {
   changeStreamsActive = false;
 
+  startPeriodicHiveCleanup();
+
   if (!(await isReplicaSetAvailable())) {
-    startPeriodicHiveCleanup();
     return;
   }
 

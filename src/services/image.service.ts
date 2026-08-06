@@ -1,5 +1,6 @@
 import sharp from 'sharp';
 import env from '../config/env';
+import { AppError } from '../utils/AppError';
 
 export interface ProcessedPhoto {
   original: Buffer;
@@ -7,13 +8,18 @@ export interface ProcessedPhoto {
 }
 
 export async function processStingPhoto(buffer: Buffer): Promise<ProcessedPhoto> {
-  const original = await sharp(buffer).jpeg({ quality: 90 }).toBuffer();
-  const thumbnail = await sharp(buffer)
-    .resize({ width: env.thumbnailWidth, withoutEnlargement: true })
-    .jpeg({ quality: env.thumbnailQuality })
-    .toBuffer();
+  try {
+    // Не вызываем rotate(): клиент уже отдаёт правильно ориентированные пиксели с Orientation=1.
+    const original = await sharp(buffer).jpeg({ quality: 90 }).toBuffer();
+    const thumbnail = await sharp(buffer)
+      .resize({ width: env.thumbnailWidth, withoutEnlargement: true })
+      .jpeg({ quality: env.thumbnailQuality })
+      .toBuffer();
 
-  return { original, thumbnail };
+    return { original, thumbnail };
+  } catch {
+    throw new AppError(422, 'VALIDATION_ERROR', 'Не удалось обработать изображение');
+  }
 }
 
 export async function processAvatar(buffer: Buffer): Promise<Buffer> {
