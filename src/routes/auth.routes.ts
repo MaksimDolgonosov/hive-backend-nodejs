@@ -17,6 +17,7 @@ router.post('/refresh', refreshValidator, handleValidation, authController.refre
 router.post('/logout', refreshValidator, handleValidation, authController.logout);
 router.post('/me/avatar', requireAuth, handleAvatarUpload, authController.uploadAvatar);
 router.delete('/me/avatar', requireAuth, authController.removeAvatar);
+router.get('/me/stats', requireAuth, authController.meStats);
 router.get('/me', requireAuth, authController.me);
 
 export default router;

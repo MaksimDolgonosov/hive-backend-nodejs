@@ -141,6 +141,21 @@ paths:
         '204':
           description: Токен отозван
 
+  /auth/me/stats:
+    get:
+      tags: [auth]
+      summary: Активная статистика профиля
+      description: Метрики по неистёкшим жала пользователя (окно TTL 4 часа).
+      responses:
+        '200':
+          description: Статистика и превью последних фото
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileOverview'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /auth/me:
     get:
       tags: [auth]
@@ -551,6 +566,33 @@ components:
           type: string
           format: date-time
       required: [id, username, avatarUrl, createdAt]
+
+    ProfileStats:
+      type: object
+      properties:
+        photos:
+          type: integer
+          description: Активные опубликованные жала пользователя
+        hives:
+          type: integer
+          description: Уникальные улья с участием фото пользователя
+        likes:
+          type: integer
+          description: Сумма reactionsCount на активных жала пользователя
+      required: [photos, hives, likes]
+
+    ProfileOverview:
+      type: object
+      properties:
+        stats:
+          $ref: '#/components/schemas/ProfileStats'
+        recentPhotos:
+          type: array
+          items:
+            type: string
+            format: uri
+          description: До 4 thumbnailUrl последних активных жала
+      required: [stats, recentPhotos]
 
     AuthTokens:
       type: object

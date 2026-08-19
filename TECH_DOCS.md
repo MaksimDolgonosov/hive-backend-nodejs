@@ -202,6 +202,22 @@ interface AuthTokens {
 // Response 204
 ```
 
+#### `GET /auth/me/stats`
+
+Активная статистика профиля (только неистёкшие жala, TTL 4 часа).
+
+```json
+// Response 200
+{
+  "stats": {
+    "photos": 3,
+    "hives": 1,
+    "likes": 12
+  },
+  "recentPhotos": ["https://.../thumb.jpg"]
+}
+```
+
 #### `GET /auth/me`
 ```json
 // Response 200

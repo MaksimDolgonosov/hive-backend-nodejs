@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import * as authService from '../services/auth.service';
+import * as profileService from '../services/profile.service';
 import { AppError } from '../utils/AppError';
 
 export async function register(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -41,6 +42,15 @@ export async function logout(req: Request, res: Response, next: NextFunction): P
 export async function me(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const result = await authService.getMe(req.user!.id);
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function meStats(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const result = await profileService.getActiveProfileOverview(req.user!.id);
     res.status(200).json(result);
   } catch (err) {
     next(err);
