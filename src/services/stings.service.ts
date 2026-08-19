@@ -16,11 +16,19 @@ import {
   CreateStingInput,
   PublicHive,
   PublicSting,
+  ReactionResult,
   ReactionType,
 } from '../types/sting';
 import { AppError } from '../utils/AppError';
 import { bboxToGeoBox, coordinatesToGeoPoint } from '../utils/geo';
-import { toPublicHive, toPublicSting } from '../utils/sting.mapper';
+import { mapPublicStings, toPublicHive, toPublicSting } from '../utils/sting.mapper';
+import {
+  createReaction,
+  deleteReaction,
+  deleteReactionsForSting,
+  getLikedStingIds,
+  hasUserLikedSting,
+} from './reactions.service';
 
 function buildExpiresAt(createdAt: Date): Date {
   return new Date(createdAt.getTime() + env.stingTtlHours * 60 * 60 * 1000);
@@ -38,7 +46,10 @@ async function emitCreateEvents(sting: ISting): Promise<void> {
   emitStingCreated(toPublicSting(sting));
 }
 
-export async function findNearby(bbox: BboxQuery): Promise<{ stings: PublicSting[]; hives: PublicHive[] }> {
+export async function findNearby(
+  bbox: BboxQuery,
+  userId: string,
+): Promise<{ stings: PublicSting[]; hives: PublicHive[] }> {
   const now = new Date();
   const box = bboxToGeoBox(bbox.swLng, bbox.swLat, bbox.neLng, bbox.neLat);
 
@@ -58,8 +69,13 @@ export async function findNearby(bbox: BboxQuery): Promise<{ stings: PublicSting
     await Promise.all(rawHives.map((hive) => syncHiveDocument(hive, now)))
   ).filter((hive): hive is NonNullable<typeof hive> => hive !== null);
 
+  const likedStingIds = await getLikedStingIds(
+    userId,
+    stings.map((sting) => sting.id),
+  );
+
   return {
-    stings: stings.map(toPublicSting),
+    stings: mapPublicStings(stings, likedStingIds),
     hives: syncedHives.map(toPublicHive),
   };
 }
@@ -108,12 +124,14 @@ export async function createSting(input: CreateStingInput): Promise<{ sting: Pub
   return { sting: toPublicSting(clustered) };
 }
 
-export async function getStingById(id: string): Promise<{ sting: PublicSting }> {
+export async function getStingById(id: string, userId: string): Promise<{ sting: PublicSting }> {
   const sting = await Sting.findOne({ _id: id, expiresAt: { $gt: new Date() } });
   if (!sting) {
     throw new AppError(404, 'STING_NOT_FOUND', 'Жало истекло или не существует');
   }
-  return { sting: toPublicSting(sting) };
+
+  const hasLiked = await hasUserLikedSting(id, userId);
+  return { sting: toPublicSting(sting, { hasLiked }) };
 }
 
 export async function deleteSting(id: string, userId: string): Promise<void> {
@@ -130,28 +148,55 @@ export async function deleteSting(id: string, userId: string): Promise<void> {
   const stingId = sting.id;
 
   await sting.deleteOne();
+  await deleteReactionsForSting(stingId);
 
   if (!areChangeStreamsActive()) {
     await notifyStingRemoved(stingId, hiveId, lat, lng);
   }
 }
 
-export async function addReaction(
+export async function toggleReaction(
   id: string,
-  _type: ReactionType,
-): Promise<{ reactionsCount: number }> {
-  const sting = await Sting.findOneAndUpdate(
-    { _id: id, expiresAt: { $gt: new Date() } },
-    { $inc: { reactionsCount: 1 } },
-    { new: true },
-  );
-
+  userId: string,
+  type: ReactionType,
+): Promise<ReactionResult> {
+  const sting = await Sting.findOne({ _id: id, expiresAt: { $gt: new Date() } });
   if (!sting) {
     throw new AppError(404, 'STING_NOT_FOUND', 'Жало не найдено');
   }
 
   const location = coordinatesToGeoPoint(sting.location.coordinates);
-  emitStingReaction(sting.id, sting.reactionsCount, location.lat, location.lng);
+  const removed = await deleteReaction(id, userId);
 
-  return { reactionsCount: sting.reactionsCount };
+  if (removed) {
+    const updated = await Sting.findOneAndUpdate(
+      { _id: id, reactionsCount: { $gt: 0 } },
+      { $inc: { reactionsCount: -1 } },
+      { new: true },
+    );
+
+    const reactionsCount = updated?.reactionsCount ?? Math.max(0, sting.reactionsCount - 1);
+    emitStingReaction(id, reactionsCount, location.lat, location.lng);
+
+    return { reactionsCount, hasLiked: false };
+  }
+
+  const created = await createReaction(id, userId, type, sting.expiresAt);
+  if (!created) {
+    return {
+      reactionsCount: sting.reactionsCount,
+      hasLiked: true,
+    };
+  }
+
+  const updated = await Sting.findByIdAndUpdate(
+    id,
+    { $inc: { reactionsCount: 1 } },
+    { new: true },
+  );
+
+  const reactionsCount = updated?.reactionsCount ?? sting.reactionsCount + 1;
+  emitStingReaction(id, reactionsCount, location.lat, location.lng);
+
+  return { reactionsCount, hasLiked: true };
 }

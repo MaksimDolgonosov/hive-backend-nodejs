@@ -2,7 +2,8 @@ import Hive from '../models/Hive';
 import Sting from '../models/Sting';
 import { PublicHive, PublicSting } from '../types/sting';
 import { AppError } from '../utils/AppError';
-import { toPublicHive, toPublicSting } from '../utils/sting.mapper';
+import { mapPublicStings, toPublicHive } from '../utils/sting.mapper';
+import { getLikedStingIds } from './reactions.service';
 import { syncHiveDocument } from './hive-cleanup.service';
 
 const DEFAULT_PAGE_LIMIT = 20;
@@ -22,7 +23,10 @@ async function requireActiveHive(id: string): Promise<PublicHive> {
   return toPublicHive(synced);
 }
 
-export async function getHiveById(id: string): Promise<{ hive: PublicHive; stings: PublicSting[] }> {
+export async function getHiveById(
+  id: string,
+  userId: string,
+): Promise<{ hive: PublicHive; stings: PublicSting[] }> {
   const now = new Date();
 
   const stings = await Sting.find({
@@ -32,15 +36,20 @@ export async function getHiveById(id: string): Promise<{ hive: PublicHive; sting
 
   const hive = await requireActiveHive(id);
   hive.activeStingsCount = stings.length;
+  const likedStingIds = await getLikedStingIds(
+    userId,
+    stings.map((sting) => sting.id),
+  );
 
   return {
     hive,
-    stings: stings.map(toPublicSting),
+    stings: mapPublicStings(stings, likedStingIds),
   };
 }
 
 export async function getHiveStings(
   id: string,
+  userId: string,
   cursor?: string,
   limit?: number,
 ): Promise<{ stings: PublicSting[]; nextCursor: string | null }> {
@@ -73,8 +82,13 @@ export async function getHiveStings(
   const hasMore = items.length > pageLimit;
   const page = hasMore ? items.slice(0, pageLimit) : items;
 
+  const likedStingIds = await getLikedStingIds(
+    userId,
+    page.map((sting) => sting.id),
+  );
+
   return {
-    stings: page.map(toPublicSting),
+    stings: mapPublicStings(page, likedStingIds),
     nextCursor: hasMore ? page[page.length - 1].id : null,
   };
 }

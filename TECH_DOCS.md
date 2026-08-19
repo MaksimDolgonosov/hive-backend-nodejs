@@ -123,6 +123,7 @@ interface Sting {
   createdAt: string;        // ISO 8601
   expiresAt: string;        // ISO 8601, createdAt + 4h
   reactionsCount: number;
+  hasLiked?: boolean;       // для авторизованных GET-запросов
 }
 
 interface Hive {
@@ -278,13 +279,18 @@ fields:
 ```
 
 #### `POST /stings/:id/reactions`
+
+Toggle like для текущего пользователя: повторный запрос снимает реакцию.
+
 ```json
 // Request
 { "type": "like" }
 
 // Response 200
-{ "reactionsCount": 14 }
+{ "reactionsCount": 14, "hasLiked": true }
 ```
+
+`GET /stings/:id`, `GET /stings/nearby` и списки в hive возвращают `hasLiked` для текущего пользователя.
 
 ---
 

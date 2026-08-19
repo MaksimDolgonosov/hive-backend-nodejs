@@ -3,7 +3,7 @@ import * as hivesService from '../services/hives.service';
 
 export async function getById(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const result = await hivesService.getHiveById(req.params.id);
+    const result = await hivesService.getHiveById(req.params.id, req.user!.id);
     res.status(200).json(result);
   } catch (err) {
     next(err);
@@ -15,6 +15,7 @@ export async function getStings(req: Request, res: Response, next: NextFunction)
     const limit = req.query.limit != null ? Number(req.query.limit) : undefined;
     const result = await hivesService.getHiveStings(
       req.params.id,
+      req.user!.id,
       typeof req.query.cursor === 'string' ? req.query.cursor : undefined,
       limit,
     );

@@ -3,7 +3,11 @@ import { ISting } from '../models/Sting';
 import { PublicHive, PublicSting } from '../types/sting';
 import { coordinatesToGeoPoint } from './geo';
 
-export function toPublicSting(sting: ISting): PublicSting {
+type PublicStingOptions = {
+  hasLiked?: boolean;
+};
+
+export function toPublicSting(sting: ISting, options?: PublicStingOptions): PublicSting {
   return {
     id: sting.id,
     authorId: String(sting.authorId),
@@ -14,7 +18,17 @@ export function toPublicSting(sting: ISting): PublicSting {
     createdAt: sting.createdAt.toISOString(),
     expiresAt: sting.expiresAt.toISOString(),
     reactionsCount: sting.reactionsCount,
+    ...(options?.hasLiked !== undefined ? { hasLiked: options.hasLiked } : {}),
   };
+}
+
+export function mapPublicStings(
+  stings: ISting[],
+  likedStingIds: Set<string>,
+): PublicSting[] {
+  return stings.map((sting) =>
+    toPublicSting(sting, { hasLiked: likedStingIds.has(sting.id) }),
+  );
 }
 
 export function toPublicHive(hive: IHive): PublicHive {

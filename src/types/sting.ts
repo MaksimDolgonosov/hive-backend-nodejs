@@ -13,6 +13,7 @@ export interface PublicSting {
   createdAt: string;
   expiresAt: string;
   reactionsCount: number;
+  hasLiked?: boolean;
 }
 
 export interface PublicHive {
@@ -47,3 +48,8 @@ export interface UploadedImageUrls {
 }
 
 export type ReactionType = 'like';
+
+export interface ReactionResult {
+  reactionsCount: number;
+  hasLiked: boolean;
+}

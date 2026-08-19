@@ -358,7 +358,7 @@ paths:
   /stings/{id}/reactions:
     post:
       tags: [stings]
-      summary: Поставить реакцию на жало
+      summary: Переключить реакцию like на жале
       parameters:
         - $ref: '#/components/parameters/StingId'
       requestBody:
@@ -375,7 +375,7 @@ paths:
                   default: like
       responses:
         '200':
-          description: Реакция учтена
+          description: Реакция переключена
           content:
             application/json:
               schema:
@@ -384,6 +384,10 @@ paths:
                   reactionsCount:
                     type: integer
                     example: 14
+                  hasLiked:
+                    type: boolean
+                    example: true
+                required: [reactionsCount, hasLiked]
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -632,6 +636,9 @@ components:
           description: createdAt + 4 часа
         reactionsCount:
           type: integer
+        hasLiked:
+          type: boolean
+          description: Поставил ли текущий пользователь like (только для авторизованных запросов)
       required:
         - id
         - authorId

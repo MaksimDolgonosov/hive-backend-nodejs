@@ -4,12 +4,15 @@ import { AppError } from '../utils/AppError';
 
 export async function nearby(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const result = await stingsService.findNearby({
-      swLat: Number(req.query.swLat),
-      swLng: Number(req.query.swLng),
-      neLat: Number(req.query.neLat),
-      neLng: Number(req.query.neLng),
-    });
+    const result = await stingsService.findNearby(
+      {
+        swLat: Number(req.query.swLat),
+        swLng: Number(req.query.swLng),
+        neLat: Number(req.query.neLat),
+        neLng: Number(req.query.neLng),
+      },
+      req.user!.id,
+    );
     res.status(200).json(result);
   } catch (err) {
     next(err);
@@ -42,7 +45,7 @@ export async function create(req: Request, res: Response, next: NextFunction): P
 
 export async function getById(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const result = await stingsService.getStingById(req.params.id);
+    const result = await stingsService.getStingById(req.params.id, req.user!.id);
     res.status(200).json(result);
   } catch (err) {
     next(err);
@@ -60,7 +63,7 @@ export async function remove(req: Request, res: Response, next: NextFunction): P
 
 export async function react(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const result = await stingsService.addReaction(req.params.id, req.body.type);
+    const result = await stingsService.toggleReaction(req.params.id, req.user!.id, req.body.type);
     res.status(200).json(result);
   } catch (err) {
     next(err);
