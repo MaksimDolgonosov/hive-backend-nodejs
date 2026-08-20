@@ -148,7 +148,8 @@ export async function updateAvatar(
   }
 
   const processed = await processAvatar(photoBuffer);
-  user.avatarUrl = await uploadAvatarImage(userId, processed);
+  const baseUrl = await uploadAvatarImage(userId, processed);
+  user.avatarUrl = `${baseUrl.split('?')[0]}?v=${Date.now()}`;
   await user.save();
 
   return { user: toPublicUser(user) };
