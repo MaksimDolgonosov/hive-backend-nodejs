@@ -43,7 +43,7 @@ export async function getHiveById(
 
   return {
     hive,
-    stings: mapPublicStings(stings, likedStingIds),
+    stings: await mapPublicStings(stings, likedStingIds),
   };
 }
 
@@ -88,7 +88,7 @@ export async function getHiveStings(
   );
 
   return {
-    stings: mapPublicStings(page, likedStingIds),
+    stings: await mapPublicStings(page, likedStingIds),
     nextCursor: hasMore ? page[page.length - 1].id : null,
   };
 }

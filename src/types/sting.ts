@@ -6,6 +6,8 @@ export interface GeoPoint {
 export interface PublicSting {
   id: string;
   authorId: string;
+  authorUsername: string;
+  authorAvatarUrl: string | null;
   imageUrl: string;
   thumbnailUrl: string;
   location: GeoPoint;

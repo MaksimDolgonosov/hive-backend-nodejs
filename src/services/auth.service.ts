@@ -35,6 +35,11 @@ export interface LoginInput {
   password: string;
 }
 
+export interface AuthorSummary {
+  username: string;
+  avatarUrl: string | null;
+}
+
 function hashToken(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
@@ -168,4 +173,20 @@ export async function removeAvatar(userId: string): Promise<{ user: PublicUser }
   }
 
   return { user: toPublicUser(user) };
+}
+
+export async function loadAuthorSummaries(
+  userIds: string[],
+): Promise<Map<string, AuthorSummary>> {
+  if (userIds.length === 0) {
+    return new Map();
+  }
+
+  const users = await User.find({ _id: { $in: userIds } }).select('username avatarUrl');
+  return new Map(
+    users.map((user) => [
+      user.id,
+      { username: user.username, avatarUrl: user.avatarUrl },
+    ]),
+  );
 }

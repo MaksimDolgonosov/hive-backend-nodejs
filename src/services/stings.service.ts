@@ -21,7 +21,7 @@ import {
 } from '../types/sting';
 import { AppError } from '../utils/AppError';
 import { bboxToGeoBox, coordinatesToGeoPoint } from '../utils/geo';
-import { mapPublicStings, toPublicHive, toPublicSting } from '../utils/sting.mapper';
+import { mapPublicStings, toPublicHive } from '../utils/sting.mapper';
 import {
   createReaction,
   deleteReaction,
@@ -43,7 +43,8 @@ async function emitCreateEvents(sting: ISting): Promise<void> {
     return;
   }
 
-  emitStingCreated(toPublicSting(sting));
+  const [publicSting] = await mapPublicStings([sting], new Set());
+  emitStingCreated(publicSting);
 }
 
 export async function findNearby(
@@ -75,7 +76,7 @@ export async function findNearby(
   );
 
   return {
-    stings: mapPublicStings(stings, likedStingIds),
+    stings: await mapPublicStings(stings, likedStingIds),
     hives: syncedHives.map(toPublicHive),
   };
 }
@@ -88,7 +89,8 @@ export async function createSting(input: CreateStingInput): Promise<{ sting: Pub
       expiresAt: { $gt: new Date() },
     });
     if (existing) {
-      return { sting: toPublicSting(existing) };
+      const [sting] = await mapPublicStings([existing], new Set());
+      return { sting };
     }
   }
 
@@ -122,7 +124,8 @@ export async function createSting(input: CreateStingInput): Promise<{ sting: Pub
   const clustered = await assignStingToHive(sting);
   await emitCreateEvents(clustered);
 
-  return { sting: toPublicSting(clustered) };
+  const [publicSting] = await mapPublicStings([clustered], new Set());
+  return { sting: publicSting };
 }
 
 export async function getStingById(id: string, userId: string): Promise<{ sting: PublicSting }> {
@@ -132,7 +135,8 @@ export async function getStingById(id: string, userId: string): Promise<{ sting:
   }
 
   const hasLiked = await hasUserLikedSting(id, userId);
-  return { sting: toPublicSting(sting, { hasLiked }) };
+  const [publicSting] = await mapPublicStings([sting], new Set(hasLiked ? [id] : []));
+  return { sting: publicSting };
 }
 
 export async function deleteSting(id: string, userId: string): Promise<void> {
