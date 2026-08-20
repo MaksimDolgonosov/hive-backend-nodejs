@@ -13,6 +13,7 @@ export interface ISting extends Document {
   capturedAt: Date;
   expiresAt: Date;
   reactionsCount: number;
+  comment: string | null;
   idempotencyKey: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -39,6 +40,7 @@ const stingSchema = new Schema<ISting>(
     capturedAt: { type: Date, required: true },
     expiresAt: { type: Date, required: true },
     reactionsCount: { type: Number, default: 0 },
+    comment: { type: String, default: null, maxlength: 280 },
     idempotencyKey: { type: String, default: null },
   },
   { timestamps: true },

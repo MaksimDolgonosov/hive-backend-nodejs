@@ -115,6 +115,7 @@ export async function createSting(input: CreateStingInput): Promise<{ sting: Pub
     accuracyM: input.accuracyM,
     capturedAt: input.capturedAt,
     expiresAt: buildExpiresAt(createdAt),
+    comment: input.comment ?? null,
     idempotencyKey: input.idempotencyKey ?? null,
   });
 

@@ -14,6 +14,12 @@ export const createStingValidator = [
     .isFloat({ min: 0 })
     .withMessage('accuracy обязателен и должен быть неотрицательным'),
   body('capturedAt').isISO8601().withMessage('capturedAt должен быть ISO8601'),
+  body('comment')
+    .optional({ values: 'null' })
+    .isString()
+    .trim()
+    .isLength({ max: 280 })
+    .withMessage('comment не должен превышать 280 символов'),
 ];
 
 export const stingIdValidator = [

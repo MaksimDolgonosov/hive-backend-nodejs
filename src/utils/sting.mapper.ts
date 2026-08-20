@@ -18,6 +18,7 @@ export function toPublicSting(sting: ISting, options?: PublicStingOptions): Publ
     createdAt: sting.createdAt.toISOString(),
     expiresAt: sting.expiresAt.toISOString(),
     reactionsCount: sting.reactionsCount,
+    comment: sting.comment ?? null,
     ...(options?.hasLiked !== undefined ? { hasLiked: options.hasLiked } : {}),
   };
 }

@@ -13,6 +13,7 @@ export interface PublicSting {
   createdAt: string;
   expiresAt: string;
   reactionsCount: number;
+  comment: string | null;
   hasLiked?: boolean;
 }
 
@@ -39,6 +40,7 @@ export interface CreateStingInput {
   accuracyM: number;
   capturedAt: Date;
   photoBuffer: Buffer;
+  comment?: string | null;
   idempotencyKey?: string;
 }
 

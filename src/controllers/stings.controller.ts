@@ -27,6 +27,10 @@ export async function create(req: Request, res: Response, next: NextFunction): P
 
     const idempotencyKey = req.header('Idempotency-Key') ?? undefined;
 
+    const rawComment = req.body.comment;
+    const comment =
+      typeof rawComment === 'string' && rawComment.trim().length > 0 ? rawComment.trim() : null;
+
     const result = await stingsService.createSting({
       authorId: req.user!.id,
       lat: Number(req.body.lat),
@@ -34,6 +38,7 @@ export async function create(req: Request, res: Response, next: NextFunction): P
       accuracyM: Number(req.body.accuracy),
       capturedAt: new Date(req.body.capturedAt),
       photoBuffer: req.file.buffer,
+      comment,
       idempotencyKey,
     });
 
