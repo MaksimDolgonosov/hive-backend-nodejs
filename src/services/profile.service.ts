@@ -1,5 +1,27 @@
 import Sting from '../models/Sting';
+import User from '../models/User';
 import { ProfileOverview } from '../types/profile';
+import { PublicProfileUser, PublicUserProfile } from '../types/public-user';
+import { AppError } from '../utils/AppError';
+import { serializeSocialLinks } from '../utils/social-links';
+
+function toPublicProfileUser(user: {
+  id: string;
+  username: string;
+  avatarUrl: string | null;
+  bio: string | null;
+  socialLinks: PublicProfileUser['socialLinks'] | null | undefined;
+  createdAt: Date;
+}): PublicProfileUser {
+  return {
+    id: user.id,
+    username: user.username,
+    avatarUrl: user.avatarUrl,
+    bio: user.bio ?? null,
+    socialLinks: serializeSocialLinks(user.socialLinks),
+    createdAt: user.createdAt.toISOString(),
+  };
+}
 
 export async function getActiveProfileOverview(userId: string): Promise<ProfileOverview> {
   const now = new Date();
@@ -30,5 +52,19 @@ export async function getActiveProfileOverview(userId: string): Promise<ProfileO
       likes,
     },
     recentPhotos: stings.slice(0, 4).map((sting) => sting.thumbnailUrl),
+  };
+}
+
+export async function getPublicUserProfile(userId: string): Promise<PublicUserProfile> {
+  const user = await User.findById(userId).select('username avatarUrl bio socialLinks createdAt');
+  if (!user) {
+    throw new AppError(404, 'USER_NOT_FOUND', 'Пользователь не найден');
+  }
+
+  const overview = await getActiveProfileOverview(userId);
+
+  return {
+    user: toPublicProfileUser(user),
+    ...overview,
   };
 }
