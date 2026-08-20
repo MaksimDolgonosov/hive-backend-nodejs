@@ -1,18 +1,11 @@
 import Sting from '../models/Sting';
-import User from '../models/User';
+import User, { IUser } from '../models/User';
 import { ProfileOverview } from '../types/profile';
 import { PublicProfileUser, PublicUserProfile } from '../types/public-user';
 import { AppError } from '../utils/AppError';
 import { serializeSocialLinks } from '../utils/social-links';
 
-function toPublicProfileUser(user: {
-  id: string;
-  username: string;
-  avatarUrl: string | null;
-  bio: string | null;
-  socialLinks: PublicProfileUser['socialLinks'] | null | undefined;
-  createdAt: Date;
-}): PublicProfileUser {
+function toPublicProfileUser(user: IUser): PublicProfileUser {
   return {
     id: user.id,
     username: user.username,
