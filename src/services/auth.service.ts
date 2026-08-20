@@ -8,6 +8,8 @@ import User, { IUser } from '../models/User';
 import { processAvatar } from './image.service';
 import { uploadAvatarImage, deleteAvatarImage } from './storage.service';
 import { AppError } from '../utils/AppError';
+import { mergeSocialLinks, serializeSocialLinks } from '../utils/social-links';
+import { UpdateProfileInput, UserSocialLinks } from '../types/profile-user';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -15,6 +17,8 @@ export interface PublicUser {
   id: string;
   username: string;
   avatarUrl: string | null;
+  bio: string | null;
+  socialLinks: UserSocialLinks;
   createdAt: string;
 }
 
@@ -49,6 +53,8 @@ function toPublicUser(user: IUser): PublicUser {
     id: user.id,
     username: user.username,
     avatarUrl: user.avatarUrl,
+    bio: user.bio ?? null,
+    socialLinks: serializeSocialLinks(user.socialLinks),
     createdAt: user.createdAt.toISOString(),
   };
 }
@@ -172,6 +178,29 @@ export async function removeAvatar(userId: string): Promise<{ user: PublicUser }
     await user.save();
   }
 
+  return { user: toPublicUser(user) };
+}
+
+export async function updateProfile(
+  userId: string,
+  input: UpdateProfileInput,
+): Promise<{ user: PublicUser }> {
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new AppError(404, 'USER_NOT_FOUND', 'Пользователь не найден');
+  }
+
+  if (input.bio !== undefined) {
+    const trimmedBio = typeof input.bio === 'string' ? input.bio.trim() : '';
+    user.bio = trimmedBio.length > 0 ? trimmedBio : null;
+  }
+
+  if (input.socialLinks !== undefined) {
+    user.socialLinks = mergeSocialLinks(user.socialLinks, input.socialLinks);
+    user.markModified('socialLinks');
+  }
+
+  await user.save();
   return { user: toPublicUser(user) };
 }
 

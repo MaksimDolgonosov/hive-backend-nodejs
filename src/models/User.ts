@@ -1,13 +1,28 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
+import { EMPTY_SOCIAL_LINKS, UserSocialLinks } from '../types/profile-user';
+
 export interface IUser extends Document {
   email: string;
   passwordHash: string;
   username: string;
   avatarUrl: string | null;
+  bio: string | null;
+  socialLinks: UserSocialLinks;
   createdAt: Date;
   updatedAt: Date;
 }
+
+const socialLinksSchema = new Schema<UserSocialLinks>(
+  {
+    instagram: { type: String, default: null, maxlength: 200 },
+    telegram: { type: String, default: null, maxlength: 200 },
+    tiktok: { type: String, default: null, maxlength: 200 },
+    youtube: { type: String, default: null, maxlength: 200 },
+    website: { type: String, default: null, maxlength: 200 },
+  },
+  { _id: false },
+);
 
 const userSchema = new Schema<IUser>(
   {
@@ -15,6 +30,8 @@ const userSchema = new Schema<IUser>(
     passwordHash: { type: String, required: true },
     username: { type: String, required: true, unique: true, trim: true },
     avatarUrl: { type: String, default: null },
+    bio: { type: String, default: null, maxlength: 280 },
+    socialLinks: { type: socialLinksSchema, default: () => ({ ...EMPTY_SOCIAL_LINKS }) },
   },
   {
     timestamps: true,

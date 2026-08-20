@@ -78,3 +78,12 @@ export async function removeAvatar(req: Request, res: Response, next: NextFuncti
     next(err);
   }
 }
+
+export async function updateProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const result = await authService.updateProfile(req.user!.id, req.body);
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
