@@ -122,11 +122,77 @@ async function deleteFromR2(key: string): Promise<void> {
   );
 }
 
-async function deleteFromLocal(filename: string): Promise<void> {
-  const filePath = path.join(env.uploadDir, filename);
+async function deleteFromLocal(relativePath: string): Promise<void> {
+  const filePath = path.join(env.uploadDir, relativePath);
   if (fs.existsSync(filePath)) {
     await fs.promises.unlink(filePath);
   }
+}
+
+function parseR2ObjectKey(url: string): string | null {
+  if (!env.r2PublicUrl) {
+    return null;
+  }
+
+  const publicBase = env.r2PublicUrl.replace(/\/$/, '');
+  if (!url.startsWith(`${publicBase}/`)) {
+    return null;
+  }
+
+  return url.slice(publicBase.length + 1);
+}
+
+function parseLocalRelativePath(url: string): string | null {
+  const marker = '/uploads/';
+  const markerIndex = url.indexOf(marker);
+  if (markerIndex === -1) {
+    return null;
+  }
+
+  const relativePath = url.slice(markerIndex + marker.length);
+  if (!relativePath || relativePath.includes('..')) {
+    return null;
+  }
+
+  return relativePath;
+}
+
+async function deleteStingImageUrl(url: string): Promise<void> {
+  const useR2 = env.storageDriver === 'r2';
+
+  if (useR2) {
+    if (!isR2Configured()) {
+      return;
+    }
+
+    const key = parseR2ObjectKey(url);
+    if (!key?.startsWith('stings/')) {
+      return;
+    }
+
+    try {
+      await deleteFromR2(key);
+    } catch (error) {
+      console.warn(`[storage] Failed to delete R2 object "${key}":`, error);
+    }
+
+    return;
+  }
+
+  const relativePath = parseLocalRelativePath(url);
+  if (!relativePath) {
+    return;
+  }
+
+  try {
+    await deleteFromLocal(relativePath);
+  } catch (error) {
+    console.warn(`[storage] Failed to delete local file "${relativePath}":`, error);
+  }
+}
+
+export async function deleteStingImages(imageUrl: string, thumbnailUrl: string): Promise<void> {
+  await Promise.all([deleteStingImageUrl(imageUrl), deleteStingImageUrl(thumbnailUrl)]);
 }
 
 export async function deleteAvatarImage(userId: string): Promise<void> {

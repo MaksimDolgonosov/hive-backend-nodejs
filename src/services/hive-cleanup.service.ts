@@ -7,6 +7,7 @@ import {
 import env from '../config/env';
 import Hive, { IHive } from '../models/Hive';
 import Sting from '../models/Sting';
+import { deleteStingImages } from './storage.service';
 import { coordinatesToGeoPoint } from '../utils/geo';
 import { toPublicHive } from '../utils/sting.mapper';
 
@@ -139,16 +140,36 @@ async function isReplicaSetAvailable(): Promise<boolean> {
   }
 }
 
+/** Удаляет файлы истёкших жал из storage (fallback без Change Streams). */
+async function cleanupExpiredStingFiles(): Promise<void> {
+  const now = new Date();
+  const expiredStings = await Sting.find({ expiresAt: { $lte: now } })
+    .select('imageUrl thumbnailUrl')
+    .limit(200);
+
+  if (expiredStings.length === 0) {
+    return;
+  }
+
+  await Promise.all(
+    expiredStings.map((sting) => deleteStingImages(sting.imageUrl, sting.thumbnailUrl)),
+  );
+}
+
 function startPeriodicHiveCleanup(): void {
   if (periodicCleanupTimer) {
     return;
   }
 
   void reconcileHives();
+  void cleanupExpiredStingFiles();
 
   periodicCleanupTimer = setInterval(() => {
     void reconcileHives().catch((err: Error) => {
       console.warn('Ошибка периодической очистки ульев:', err.message);
+    });
+    void cleanupExpiredStingFiles().catch((err: Error) => {
+      console.warn('Ошибка очистки файлов истёкших жал:', err.message);
     });
   }, env.hiveCleanupIntervalMs);
 
@@ -177,6 +198,10 @@ export async function startStingDeletionWatcher(): Promise<void> {
       const doc = change.fullDocumentBeforeChange;
       if (!doc?.location?.coordinates) {
         return;
+      }
+
+      if (doc.imageUrl && doc.thumbnailUrl) {
+        await deleteStingImages(doc.imageUrl, doc.thumbnailUrl);
       }
 
       const [lng, lat] = doc.location.coordinates;

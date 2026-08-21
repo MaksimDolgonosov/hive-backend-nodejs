@@ -10,7 +10,7 @@ import { assignStingToHive } from './clustering.service';
 import { areChangeStreamsActive, notifyStingRemoved, syncHiveDocument } from './hive-cleanup.service';
 import { processStingPhoto } from './image.service';
 import { validatePhotoModeration } from './moderation.service';
-import { uploadStingImages } from './storage.service';
+import { deleteStingImages, uploadStingImages } from './storage.service';
 import { validateStingSubmission } from './sting-validation.service';
 import {
   BboxQuery,
@@ -155,6 +155,7 @@ export async function deleteSting(id: string, userId: string): Promise<void> {
   const hiveId = sting.hiveId;
   const stingId = sting.id;
 
+  await deleteStingImages(sting.imageUrl, sting.thumbnailUrl);
   await sting.deleteOne();
   await deleteReactionsForSting(stingId);
 
