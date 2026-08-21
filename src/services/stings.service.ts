@@ -9,6 +9,7 @@ import {
 import { assignStingToHive } from './clustering.service';
 import { areChangeStreamsActive, notifyStingRemoved, syncHiveDocument } from './hive-cleanup.service';
 import { processStingPhoto } from './image.service';
+import { validatePhotoModeration } from './moderation.service';
 import { uploadStingImages } from './storage.service';
 import { validateStingSubmission } from './sting-validation.service';
 import {
@@ -101,6 +102,8 @@ export async function createSting(input: CreateStingInput): Promise<{ sting: Pub
     capturedAt: input.capturedAt,
     photoBuffer: input.photoBuffer,
   });
+
+  await validatePhotoModeration(input.photoBuffer);
 
   const processed = await processStingPhoto(input.photoBuffer);
   const { imageUrl, thumbnailUrl } = await uploadStingImages(processed.original, processed.thumbnail);

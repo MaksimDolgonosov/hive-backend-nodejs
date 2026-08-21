@@ -305,17 +305,26 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '422':
-          description: Не пройдена серверная анти-спуфинг проверка
+          description: Не пройдена серверная анти-спуфинг или NSFW-проверка
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: STING_VALIDATION_FAILED
-                  message: Фото не прошло проверку подлинности
-                  details:
-                    reason: EXIF_MISMATCH
+              examples:
+                validationFailed:
+                  summary: Анти-спуфинг
+                  value:
+                    error:
+                      code: STING_VALIDATION_FAILED
+                      message: Фото не прошло проверку подлинности
+                      details:
+                        reason: EXIF_MISMATCH
+                moderationFailed:
+                  summary: NSFW-модерация
+                  value:
+                    error:
+                      code: CONTENT_MODERATION_FAILED
+                      message: Фото не прошло проверку безопасности
         '429':
           description: Превышен лимит частоты публикаций
           content:

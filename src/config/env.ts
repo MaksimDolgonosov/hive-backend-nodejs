@@ -42,6 +42,10 @@ const env = {
   stingRateLimitWindowMs: Number(process.env.STING_RATE_LIMIT_WINDOW_MS) || 3_600_000,
   avatarSize: Number(process.env.AVATAR_SIZE) || 256,
   avatarQuality: Number(process.env.AVATAR_QUALITY) || 85,
+  moderationEnabled: process.env.MODERATION_ENABLED !== 'false',
+  moderationPornThreshold: Number(process.env.MODERATION_PORN_THRESHOLD) || 0.85,
+  moderationHentaiThreshold: Number(process.env.MODERATION_HENTAI_THRESHOLD) || 0.85,
+  moderationSexyThreshold: Number(process.env.MODERATION_SEXY_THRESHOLD) || 0.92,
 } as const;
 
 export default env;
