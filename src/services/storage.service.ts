@@ -129,17 +129,27 @@ async function deleteFromLocal(relativePath: string): Promise<void> {
   }
 }
 
-function parseR2ObjectKey(url: string): string | null {
-  if (!env.r2PublicUrl) {
+function parseStingObjectKey(url: string): string | null {
+  if (!url) {
     return null;
   }
 
   const publicBase = env.r2PublicUrl.replace(/\/$/, '');
-  if (!url.startsWith(`${publicBase}/`)) {
-    return null;
+  if (publicBase && url.startsWith(`${publicBase}/`)) {
+    return url.slice(publicBase.length + 1);
   }
 
-  return url.slice(publicBase.length + 1);
+  try {
+    const pathname = decodeURIComponent(new URL(url).pathname).replace(/^\/+/, '');
+    if (pathname.startsWith('stings/')) {
+      return pathname;
+    }
+  } catch {
+    // ignore invalid URLs, try regex fallback below
+  }
+
+  const match = url.match(/stings\/[^?#]+/);
+  return match?.[0] ?? null;
 }
 
 function parseLocalRelativePath(url: string): string | null {
@@ -162,11 +172,13 @@ async function deleteStingImageUrl(url: string): Promise<void> {
 
   if (useR2) {
     if (!isR2Configured()) {
+      console.warn('[storage] R2 selected but env is incomplete — sting file was not deleted from bucket');
       return;
     }
 
-    const key = parseR2ObjectKey(url);
+    const key = parseStingObjectKey(url);
     if (!key?.startsWith('stings/')) {
+      console.warn(`[storage] Could not resolve R2 key for sting URL: ${url}`);
       return;
     }
 

@@ -159,6 +159,7 @@ export async function deleteSting(id: string, userId: string): Promise<void> {
   await sting.deleteOne();
   await deleteReactionsForSting(stingId);
 
+  // Realtime-событие: при Change Streams его шлёт watcher; иначе — здесь.
   if (!areChangeStreamsActive()) {
     await notifyStingRemoved(stingId, hiveId, lat, lng);
   }

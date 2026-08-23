@@ -289,6 +289,11 @@ fields:
 #### `DELETE /stings/:id`
 Удаление собственного жала до истечения TTL. Только автор.
 
+При успешном удалении backend:
+1. Удаляет из storage оригинал и thumbnail (`deleteStingImages` — R2 `DeleteObject` или локальный файл).
+2. Удаляет документ `Sting` и связанные реакции.
+3. Пересчитывает улей / шлёт `sting:expired` и при необходимости `hive:updated` / `hive:dissolved`.
+
 ```
 // Response 204
 // Response 403 — попытка удалить чужое жало
