@@ -7,7 +7,8 @@ export const stingCreateRateLimit = rateLimit({
   max: env.stingRateLimitMax,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req: Request): string => req.user?.id ?? req.ip ?? 'anonymous',
+  // requireAuth стоит перед этим middleware — ключ всегда по userId
+  keyGenerator: (req: Request): string => req.user!.id,
   handler: (_req: Request, res: Response): void => {
     res.status(429).json({
       error: {

@@ -103,9 +103,10 @@ export async function createSting(input: CreateStingInput): Promise<{ sting: Pub
     photoBuffer: input.photoBuffer,
   });
 
-  await validatePhotoModeration(input.photoBuffer);
-
   const processed = await processStingPhoto(input.photoBuffer);
+  // NSFWJS на thumbnail (~400px), а не на полном фото — меньше RAM на Railway
+  await validatePhotoModeration(processed.thumbnail);
+
   const { imageUrl, thumbnailUrl } = await uploadStingImages(processed.original, processed.thumbnail);
   const createdAt = new Date();
 
