@@ -46,6 +46,10 @@ const env = {
   moderationPornThreshold: Number(process.env.MODERATION_PORN_THRESHOLD) || 0.85,
   moderationHentaiThreshold: Number(process.env.MODERATION_HENTAI_THRESHOLD) || 0.85,
   moderationSexyThreshold: Number(process.env.MODERATION_SEXY_THRESHOLD) || 0.92,
+  googleClientIds: (process.env.GOOGLE_CLIENT_IDS ?? process.env.GOOGLE_CLIENT_ID ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
 } as const;
 
 export default env;

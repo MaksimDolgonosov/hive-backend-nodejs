@@ -21,6 +21,15 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
   }
 }
 
+export async function loginWithGoogle(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const result = await authService.loginWithGoogle(req.body);
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function refresh(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const result = await authService.refresh(req.body.refreshToken);

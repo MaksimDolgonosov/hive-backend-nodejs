@@ -17,6 +17,10 @@ export const refreshValidator = [
   body('refreshToken').isString().notEmpty().withMessage('refreshToken обязателен'),
 ];
 
+export const googleLoginValidator = [
+  body('idToken').isString().notEmpty().withMessage('idToken обязателен'),
+];
+
 export const updateProfileValidator = [
   body('bio')
     .optional({ values: 'null' })

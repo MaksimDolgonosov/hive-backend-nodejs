@@ -10,6 +10,7 @@ import { uploadAvatarImage, deleteAvatarImage } from './storage.service';
 import { AppError } from '../utils/AppError';
 import { mergeSocialLinks, serializeSocialLinks } from '../utils/social-links';
 import { UpdateProfileInput, UserSocialLinks } from '../types/profile-user';
+import { verifyGoogleIdToken } from './google-auth.service';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -37,6 +38,10 @@ export interface RegisterInput {
 export interface LoginInput {
   email: string;
   password: string;
+}
+
+export interface GoogleLoginInput {
+  idToken: string;
 }
 
 export interface AuthorSummary {
@@ -82,6 +87,81 @@ async function issueTokens(userId: string): Promise<AuthTokens> {
   };
 }
 
+function normalizeUsernameSeed(email: string, name?: string | null): string {
+  const fromName = name
+    ?.trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  if (fromName && fromName.length >= 3) {
+    return fromName.slice(0, 30);
+  }
+
+  const fromEmail = email
+    .split('@')[0]
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  if (fromEmail.length >= 3) {
+    return fromEmail.slice(0, 30);
+  }
+
+  return 'hive_user';
+}
+
+async function ensureUniqueUsername(email: string, name?: string | null): Promise<string> {
+  const base = normalizeUsernameSeed(email, name);
+  let candidate = base;
+  let suffix = 0;
+
+  while (await User.exists({ username: candidate })) {
+    suffix += 1;
+    candidate = `${base.slice(0, Math.max(3, 30 - String(suffix).length))}${suffix}`;
+  }
+
+  return candidate;
+}
+
+async function findOrCreateGoogleUser(payload: {
+  sub: string;
+  email: string;
+  name: string | null;
+  picture: string | null;
+}): Promise<IUser> {
+  const byGoogleId = await User.findOne({ googleId: payload.sub });
+  if (byGoogleId) {
+    return byGoogleId;
+  }
+
+  const byEmail = await User.findOne({ email: payload.email });
+  if (byEmail) {
+    if (byEmail.googleId && byEmail.googleId !== payload.sub) {
+      throw new AppError(
+        409,
+        'GOOGLE_ACCOUNT_CONFLICT',
+        'Этот email уже привязан к другому Google-аккаунту',
+      );
+    }
+
+    byEmail.googleId = payload.sub;
+    if (!byEmail.avatarUrl && payload.picture) {
+      byEmail.avatarUrl = payload.picture;
+    }
+    await byEmail.save();
+    return byEmail;
+  }
+
+  return User.create({
+    email: payload.email,
+    username: await ensureUniqueUsername(payload.email, payload.name),
+    googleId: payload.sub,
+    avatarUrl: payload.picture,
+    passwordHash: null,
+  });
+}
+
 export async function register(input: RegisterInput): Promise<{ user: PublicUser; tokens: AuthTokens }> {
   const normalizedEmail = input.email.toLowerCase();
 
@@ -106,10 +186,19 @@ export async function register(input: RegisterInput): Promise<{ user: PublicUser
 export async function login(input: LoginInput): Promise<{ user: PublicUser; tokens: AuthTokens }> {
   const user = await User.findOne({ email: input.email.toLowerCase() });
 
-  if (!user || !(await bcrypt.compare(input.password, user.passwordHash))) {
+  if (!user?.passwordHash || !(await bcrypt.compare(input.password, user.passwordHash))) {
     throw new AppError(401, 'INVALID_CREDENTIALS', 'Неверный email или пароль');
   }
 
+  const tokens = await issueTokens(user.id);
+  return { user: toPublicUser(user), tokens };
+}
+
+export async function loginWithGoogle(
+  input: GoogleLoginInput,
+): Promise<{ user: PublicUser; tokens: AuthTokens }> {
+  const payload = await verifyGoogleIdToken(input.idToken);
+  const user = await findOrCreateGoogleUser(payload);
   const tokens = await issueTokens(user.id);
   return { user: toPublicUser(user), tokens };
 }

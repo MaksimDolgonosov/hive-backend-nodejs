@@ -19,6 +19,7 @@
     "express": "^4.19.2",
     "express-rate-limit": "^8.6.1",
     "express-validator": "^7.1.0",
+    "google-auth-library": "^9.15.1",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.4.0",
     "ms": "^2.1.3",

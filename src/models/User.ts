@@ -4,7 +4,8 @@ import { EMPTY_SOCIAL_LINKS, UserSocialLinks } from '../types/profile-user';
 
 export interface IUser extends Document {
   email: string;
-  passwordHash: string;
+  passwordHash: string | null;
+  googleId: string | null;
   username: string;
   avatarUrl: string | null;
   bio: string | null;
@@ -27,7 +28,8 @@ const socialLinksSchema = new Schema<UserSocialLinks>(
 const userSchema = new Schema<IUser>(
   {
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    passwordHash: { type: String, required: true },
+    passwordHash: { type: String, default: null },
+    googleId: { type: String, default: null, unique: true, sparse: true },
     username: { type: String, required: true, unique: true, trim: true },
     avatarUrl: { type: String, default: null },
     bio: { type: String, default: null, maxlength: 280 },
