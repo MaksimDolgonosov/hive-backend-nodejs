@@ -7,7 +7,8 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "dev": "tsx watch server.ts",
-    "ws:test": "tsx scripts/ws-test.ts"
+    "ws:test": "tsx scripts/ws-test.ts",
+    "migrate:fix-google-id-nulls": "tsx scripts/fix-google-id-nulls.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.620.0",

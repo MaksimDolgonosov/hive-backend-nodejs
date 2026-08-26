@@ -163,10 +163,11 @@ async function findOrCreateGoogleUser(payload: {
 }
 
 export async function register(input: RegisterInput): Promise<{ user: PublicUser; tokens: AuthTokens }> {
-  const normalizedEmail = input.email.toLowerCase();
+  const normalizedEmail = input.email.trim().toLowerCase();
+  const normalizedUsername = input.username.trim();
 
   const existing = await User.findOne({
-    $or: [{ email: normalizedEmail }, { username: input.username }],
+    $or: [{ email: normalizedEmail }, { username: normalizedUsername }],
   });
   if (existing) {
     throw new AppError(409, 'USER_ALREADY_EXISTS', 'Email или username уже заняты');
@@ -175,7 +176,7 @@ export async function register(input: RegisterInput): Promise<{ user: PublicUser
   const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
   const user = await User.create({
     email: normalizedEmail,
-    username: input.username,
+    username: normalizedUsername,
     passwordHash,
   });
 

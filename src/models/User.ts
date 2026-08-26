@@ -29,7 +29,8 @@ const userSchema = new Schema<IUser>(
   {
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     passwordHash: { type: String, default: null },
-    googleId: { type: String, default: null, unique: true, sparse: true },
+    // Без default: null — иначе sparse unique index допускает только одну запись с googleId: null.
+    googleId: { type: String, unique: true, sparse: true },
     username: { type: String, required: true, unique: true, trim: true },
     avatarUrl: { type: String, default: null },
     bio: { type: String, default: null, maxlength: 280 },

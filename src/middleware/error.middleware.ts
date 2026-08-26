@@ -41,8 +41,22 @@ function errorMiddleware(
     'code' in err &&
     (err as { code: unknown }).code === 11000
   ) {
+    const keyPattern = (err as { keyPattern?: Record<string, unknown> }).keyPattern;
+    const field = keyPattern ? Object.keys(keyPattern)[0] : undefined;
+
+    if (field === 'email' || field === 'username') {
+      res.status(409).json({
+        error: { code: 'USER_ALREADY_EXISTS', message: 'Email или username уже заняты' },
+      });
+      return;
+    }
+
     res.status(409).json({
-      error: { code: 'CONFLICT', message: 'Запись с такими данными уже существует' },
+      error: {
+        code: 'CONFLICT',
+        message: 'Запись с такими данными уже существует',
+        details: field ? { field } : undefined,
+      },
     });
     return;
   }
