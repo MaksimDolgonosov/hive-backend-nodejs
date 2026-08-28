@@ -10,6 +10,7 @@ import {
   registerValidator,
   updateProfileValidator,
 } from '../validators/auth.validators';
+import { profileCollectionValidator } from '../validators/profile.validators';
 
 const router = Router();
 
@@ -22,6 +23,27 @@ router.post('/me/avatar', requireAuth, handleAvatarUpload, authController.upload
 router.delete('/me/avatar', requireAuth, authController.removeAvatar);
 router.patch('/me', requireAuth, updateProfileValidator, handleValidation, authController.updateProfile);
 router.get('/me/stats', requireAuth, authController.meStats);
+router.get(
+  '/me/stings',
+  requireAuth,
+  profileCollectionValidator,
+  handleValidation,
+  authController.meStings,
+);
+router.get(
+  '/me/hives',
+  requireAuth,
+  profileCollectionValidator,
+  handleValidation,
+  authController.meHives,
+);
+router.get(
+  '/me/liked-stings',
+  requireAuth,
+  profileCollectionValidator,
+  handleValidation,
+  authController.meLikedStings,
+);
 router.get('/me', requireAuth, authController.me);
 
 export default router;

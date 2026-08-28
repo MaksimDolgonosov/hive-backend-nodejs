@@ -156,6 +156,87 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /auth/me/stings:
+    get:
+      tags: [auth]
+      summary: Опубликованные жала текущего пользователя
+      parameters:
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+            maximum: 50
+      responses:
+        '200':
+          description: Пагинированный список жал автора
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StingsPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /auth/me/hives:
+    get:
+      tags: [auth]
+      summary: Ульи, в которых есть фото текущего пользователя
+      parameters:
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+            maximum: 50
+      responses:
+        '200':
+          description: Пагинированный список ульев пользователя
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserHivesPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /auth/me/liked-stings:
+    get:
+      tags: [auth]
+      summary: Жала, которые текущий пользователь лайкнул
+      parameters:
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+            maximum: 50
+      responses:
+        '200':
+          description: Пагинированный список лайкнутых жал
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StingsPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
   /auth/me:
     get:
       tags: [auth]
@@ -602,6 +683,40 @@ components:
             format: uri
           description: До 4 thumbnailUrl последних активных жала
       required: [stats, recentPhotos]
+
+    StingsPage:
+      type: object
+      properties:
+        stings:
+          type: array
+          items:
+            $ref: '#/components/schemas/Sting'
+        nextCursor:
+          type: string
+          nullable: true
+      required: [stings, nextCursor]
+
+    UserHiveSummary:
+      allOf:
+        - $ref: '#/components/schemas/Hive'
+        - type: object
+          properties:
+            userStingsCount:
+              type: integer
+              description: Число активных жал пользователя в этом улье
+          required: [userStingsCount]
+
+    UserHivesPage:
+      type: object
+      properties:
+        hives:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserHiveSummary'
+        nextCursor:
+          type: string
+          nullable: true
+      required: [hives, nextCursor]
 
     AuthTokens:
       type: object

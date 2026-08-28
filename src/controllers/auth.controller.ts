@@ -66,6 +66,43 @@ export async function meStats(req: Request, res: Response, next: NextFunction): 
   }
 }
 
+function parseCollectionQuery(req: Request): { cursor?: string; limit?: number } {
+  return {
+    cursor: typeof req.query.cursor === 'string' ? req.query.cursor : undefined,
+    limit: req.query.limit != null ? Number(req.query.limit) : undefined,
+  };
+}
+
+export async function meStings(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { cursor, limit } = parseCollectionQuery(req);
+    const result = await profileService.getMyStings(req.user!.id, cursor, limit);
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function meHives(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { cursor, limit } = parseCollectionQuery(req);
+    const result = await profileService.getMyHives(req.user!.id, cursor, limit);
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function meLikedStings(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { cursor, limit } = parseCollectionQuery(req);
+    const result = await profileService.getLikedStings(req.user!.id, cursor, limit);
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function uploadAvatar(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     if (!req.file?.buffer) {

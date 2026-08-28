@@ -19,6 +19,7 @@ const stingReactionSchema = new Schema<IStingReaction>(
 );
 
 stingReactionSchema.index({ stingId: 1, userId: 1 }, { unique: true });
+stingReactionSchema.index({ userId: 1, createdAt: -1 });
 stingReactionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export default mongoose.model<IStingReaction>('StingReaction', stingReactionSchema);
