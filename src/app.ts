@@ -9,6 +9,9 @@ import usersRoutes from './routes/users.routes';
 
 const app = express();
 
+// Railway/Render ставят X-Forwarded-For; без trust proxy express-rate-limit падает.
+app.set('trust proxy', 1);
+
 app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static(env.uploadDir));
