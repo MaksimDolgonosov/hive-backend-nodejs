@@ -22,6 +22,24 @@ function optionalWithProdRequired(name: string, devDefault: string): string {
   return devDefault;
 }
 
+function normalizeEmailFrom(): string {
+  const raw = (process.env.SMTP_FROM || process.env.EMAIL_FROM || '')
+    .trim()
+    .replace(/^['"]+|['"]+$/g, '')
+    .trim();
+
+  const looksValid = /^([^<>@]+@[^<>@]+\.[^<>@]+|[^<>]+ <[^<>@]+@[^<>@]+\.[^<>@]+>)$/.test(raw);
+  if (looksValid && !/@localhost\b/i.test(raw)) {
+    return raw;
+  }
+
+  if (process.env.RESEND_API_KEY) {
+    return 'Hive <onboarding@resend.dev>';
+  }
+
+  return raw || 'Hive <noreply@localhost>';
+}
+
 const port = Number(process.env.PORT) || 3000;
 const storageDriver = process.env.STORAGE_DRIVER === 'r2' ? 'r2' : 'local';
 const nodeEnv = process.env.NODE_ENV || 'development';
@@ -76,7 +94,7 @@ const env = {
   smtpSecure: process.env.SMTP_SECURE === 'true',
   smtpUser: process.env.SMTP_USER || '',
   smtpPass: process.env.SMTP_PASS || '',
-  smtpFrom: process.env.SMTP_FROM || process.env.EMAIL_FROM || 'Hive <noreply@localhost>',
+  smtpFrom: normalizeEmailFrom(),
 } as const;
 
 export default env;
