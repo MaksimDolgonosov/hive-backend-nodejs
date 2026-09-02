@@ -70,6 +70,7 @@ const env = {
   otpPepper: optionalWithProdRequired('OTP_PEPPER', 'dev-only-otp-pepper-change-me'),
   otpDevLog: process.env.OTP_DEV_LOG === 'true',
   otpDefaultLocale: process.env.OTP_DEFAULT_LOCALE === 'en' ? 'en' : 'ru',
+  resendApiKey: process.env.RESEND_API_KEY || '',
   smtpHost: process.env.SMTP_HOST || '',
   smtpPort: Number(process.env.SMTP_PORT) || 587,
   smtpSecure: process.env.SMTP_SECURE === 'true',
