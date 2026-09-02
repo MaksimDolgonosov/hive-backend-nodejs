@@ -2,6 +2,8 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 import { EMPTY_SOCIAL_LINKS, UserSocialLinks } from '../types/profile-user';
 
+export type UserStatus = 'pending' | 'active' | 'disabled';
+
 export interface IUser extends Document {
   email: string;
   passwordHash: string | null;
@@ -10,6 +12,8 @@ export interface IUser extends Document {
   avatarUrl: string | null;
   bio: string | null;
   socialLinks: UserSocialLinks;
+  emailVerified: boolean;
+  status: UserStatus;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -35,6 +39,12 @@ const userSchema = new Schema<IUser>(
     avatarUrl: { type: String, default: null },
     bio: { type: String, default: null, maxlength: 280 },
     socialLinks: { type: socialLinksSchema, default: () => ({ ...EMPTY_SOCIAL_LINKS }) },
+    emailVerified: { type: Boolean, default: false },
+    status: {
+      type: String,
+      enum: ['pending', 'active', 'disabled'],
+      default: 'pending',
+    },
   },
   {
     timestamps: true,

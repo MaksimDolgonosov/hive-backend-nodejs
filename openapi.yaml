@@ -16,7 +16,7 @@ servers:
 
 tags:
   - name: auth
-    description: Регистрация, вход, управление токенами
+    description: Регистрация, вход, OTP, управление токенами
   - name: stings
     description: Публикация и просмотр жал
   - name: hives
@@ -32,7 +32,10 @@ paths:
   /auth/register:
     post:
       tags: [auth]
-      summary: Регистрация нового пользователя
+      summary: Регистрация — создаёт pending-аккаунт и отправляет OTP на email
+      description: >
+        Токены не выдаются. После получения кода клиент вызывает `POST /auth/otp/verify`.
+        Если email уже есть и не подтверждён — обновляются пароль/username и высылается новый код.
       security: []
       requestBody:
         required: true
@@ -42,18 +45,77 @@ paths:
               $ref: '#/components/schemas/RegisterRequest'
       responses:
         '201':
-          description: Пользователь создан
+          description: OTP отправлен, требуется подтверждение email
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  user:
-                    $ref: '#/components/schemas/User'
-                  tokens:
-                    $ref: '#/components/schemas/AuthTokens'
+                $ref: '#/components/schemas/OtpDispatchResponse'
         '409':
-          description: Email или username уже заняты
+          description: Email уже подтверждён или username занят
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/OtpRateLimited'
+
+  /auth/otp/verify:
+    post:
+      tags: [auth]
+      summary: Подтверждение OTP регистрации — активация аккаунта и выдача сессии
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OtpVerifyRequest'
+      responses:
+        '200':
+          description: Email подтверждён, выдана сессия
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSessionResponse'
+        '400':
+          description: OTP_INVALID / OTP_EXPIRED / OTP_MAX_ATTEMPTS
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Нет активного challenge (OTP_NOT_FOUND)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/OtpRateLimited'
+
+  /auth/otp/resend:
+    post:
+      tags: [auth]
+      summary: Повторная отправка OTP
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OtpResendRequest'
+      responses:
+        '200':
+          description: Код отправлен (или тот же ответ без письма — anti-enumeration для password_reset)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OtpDispatchResponse'
+        '429':
+          description: OTP_RESEND_COOLDOWN или OTP_RATE_LIMITED
           content:
             application/json:
               schema:
@@ -78,18 +140,84 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  user:
-                    $ref: '#/components/schemas/User'
-                  tokens:
-                    $ref: '#/components/schemas/AuthTokens'
+                $ref: '#/components/schemas/AuthSessionResponse'
         '401':
           description: Неверные учётные данные
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Email не подтверждён (EMAIL_NOT_VERIFIED) — клиент открывает экран OTP
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/OtpRateLimited'
+
+  /auth/password/forgot:
+    post:
+      tags: [auth]
+      summary: Запрос OTP для сброса пароля
+      description: >
+        Ответ всегда одинаковый, даже если email не найден или не подтверждён (anti-enumeration).
+        Письмо уходит только существующему подтверждённому пользователю.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordForgotRequest'
+      responses:
+        '200':
+          description: Унифицированный успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OtpDispatchResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/OtpRateLimited'
+
+  /auth/password/reset:
+    post:
+      tags: [auth]
+      summary: Сброс пароля по OTP (вариант A — один запрос)
+      description: >
+        При успехе пароль обновляется, все refresh-токены отзываются, выдаётся новая сессия.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetRequest'
+      responses:
+        '200':
+          description: Пароль изменён, выдана новая сессия
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSessionResponse'
+        '400':
+          description: OTP_INVALID / OTP_EXPIRED / OTP_MAX_ATTEMPTS
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Нет активного challenge (OTP_NOT_FOUND)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/OtpRateLimited'
 
   /auth/refresh:
     post:
@@ -638,6 +766,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+    OtpRateLimited:
+      description: Превышен лимит запросов OTP/auth
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
 
   schemas:
     User:
@@ -732,6 +866,90 @@ components:
           format: date-time
           description: Срок действия accessToken
       required: [accessToken, refreshToken, expiresAt]
+
+    AuthSessionResponse:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        tokens:
+          $ref: '#/components/schemas/AuthTokens'
+      required: [user, tokens]
+
+    OtpDispatchResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [otp_required, otp_sent]
+        email:
+          type: string
+          format: email
+        purpose:
+          type: string
+          enum: [register, password_reset]
+        expiresInSec:
+          type: integer
+          example: 600
+        resendAvailableInSec:
+          type: integer
+          example: 60
+      required: [status, email, purpose, expiresInSec, resendAvailableInSec]
+
+    OtpVerifyRequest:
+      type: object
+      required: [email, code, purpose]
+      properties:
+        email:
+          type: string
+          format: email
+        code:
+          type: string
+          pattern: '^\d{6}$'
+          example: '123456'
+        purpose:
+          type: string
+          enum: [register]
+
+    OtpResendRequest:
+      type: object
+      required: [email, purpose]
+      properties:
+        email:
+          type: string
+          format: email
+        purpose:
+          type: string
+          enum: [register, password_reset]
+        locale:
+          type: string
+          enum: [ru, en]
+
+    PasswordForgotRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+        locale:
+          type: string
+          enum: [ru, en]
+
+    PasswordResetRequest:
+      type: object
+      required: [email, code, newPassword]
+      properties:
+        email:
+          type: string
+          format: email
+        code:
+          type: string
+          pattern: '^\d{6}$'
+        newPassword:
+          type: string
+          format: password
+          minLength: 8
 
     RegisterRequest:
       type: object

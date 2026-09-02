@@ -146,7 +146,7 @@ interface AuthTokens {
 
 ## 3. API контракты
 
-Базовый префикс: `/api/v1`. Формат: JSON. Аутентификация — `Authorization: Bearer <accessToken>` для всех эндпоинтов, кроме `/auth/register`, `/auth/login`, `/auth/refresh`.
+Базовый префикс: `/api/v1`. Формат: JSON. Аутентификация — `Authorization: Bearer <accessToken>` для всех эндпоинтов, кроме `/auth/register`, `/auth/otp/verify`, `/auth/otp/resend`, `/auth/login`, `/auth/password/forgot`, `/auth/password/reset`, `/auth/refresh`.
 
 Единый формат ошибки:
 
@@ -162,14 +162,64 @@ interface AuthTokens {
 
 ### 3.1 Auth
 
+Регистрация по email — двухшаговая: `register` создаёт пользователя `pending` и шлёт 6-значный OTP (TTL 10 минут, max 5 попыток, cooldown resend 60 с). Токены выдаются только после `otp/verify`. Сброс пароля — вариант A (один запрос `password/reset` с email + code + newPassword); после успеха все refresh-токены отзываются и выдаётся новая сессия.
+
 #### `POST /auth/register`
 ```json
 // Request
 { "email": "user@example.com", "password": "string", "username": "string" }
 
 // Response 201
-{ "user": User, "tokens": AuthTokens }
+{
+  "status": "otp_required",
+  "email": "user@example.com",
+  "purpose": "register",
+  "expiresInSec": 600,
+  "resendAvailableInSec": 60
+}
+
+// Response 409 — email уже подтверждён или username занят
+{ "error": { "code": "USER_ALREADY_EXISTS", "message": "..." } }
 ```
+
+Если email есть, но `emailVerified=false`, пароль/username обновляются и высылается новый код (токены не выдаются).
+
+#### `POST /auth/otp/verify`
+```json
+// Request
+{ "email": "user@example.com", "code": "123456", "purpose": "register" }
+
+// Response 200
+{ "user": User, "tokens": AuthTokens }
+
+// Response 400
+{ "error": { "code": "OTP_INVALID" | "OTP_EXPIRED" | "OTP_MAX_ATTEMPTS", "message": "..." } }
+
+// Response 404
+{ "error": { "code": "OTP_NOT_FOUND", "message": "..." } }
+```
+
+Побочные эффекты: `emailVerified=true`, `status=active`.
+
+#### `POST /auth/otp/resend`
+```json
+// Request
+{ "email": "user@example.com", "purpose": "register" | "password_reset" }
+
+// Response 200
+{
+  "status": "otp_sent",
+  "email": "user@example.com",
+  "purpose": "register",
+  "expiresInSec": 600,
+  "resendAvailableInSec": 60
+}
+
+// Response 429 — слишком рано или превышен лимит отправок
+{ "error": { "code": "OTP_RESEND_COOLDOWN" | "OTP_RATE_LIMITED", "message": "...", "details": { "retryAfterSec": 42 } } }
+```
+
+Для `purpose=password_reset`: даже если email не найден, возвращается тот же успешный ответ (anti-enumeration).
 
 #### `POST /auth/login`
 ```json
@@ -181,7 +231,42 @@ interface AuthTokens {
 
 // Response 401
 { "error": { "code": "INVALID_CREDENTIALS", "message": "..." } }
+
+// Response 403 — аккаунт не подтверждён; клиент открывает экран OTP и может вызвать /auth/otp/resend
+{
+  "error": {
+    "code": "EMAIL_NOT_VERIFIED",
+    "message": "Email is not verified",
+    "details": { "email": "user@example.com", "purpose": "register" }
+  }
+}
 ```
+
+#### `POST /auth/password/forgot`
+```json
+// Request
+{ "email": "user@example.com" }
+
+// Response 200 — всегда, в том числе если email не существует (anti-enumeration)
+{
+  "status": "otp_sent",
+  "email": "user@example.com",
+  "purpose": "password_reset",
+  "expiresInSec": 600,
+  "resendAvailableInSec": 60
+}
+```
+
+#### `POST /auth/password/reset`
+```json
+// Request
+{ "email": "user@example.com", "code": "123456", "newPassword": "string" }
+
+// Response 200
+{ "user": User, "tokens": AuthTokens }
+```
+
+После успеха старый пароль больше не работает, все refresh-токены пользователя отозваны.
 
 #### `POST /auth/refresh`
 ```json

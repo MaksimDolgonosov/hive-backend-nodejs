@@ -95,14 +95,18 @@ WebSocket: **http://localhost:3000/ws?token=accessToken**
 
 ## API (краткий обзор)
 
-Префикс: `/api/v1`. Все эндпоинты, кроме register/login/refresh, требуют `Authorization: Bearer <accessToken>`.
+Префикс: `/api/v1`. Все эндпоинты, кроме register / otp / login / password forgot|reset / refresh, требуют `Authorization: Bearer <accessToken>`.
 
 ### Auth
 
 | Метод | Путь | Описание |
 |-------|------|----------|
-| POST | `/auth/register` | Регистрация |
-| POST | `/auth/login` | Вход |
+| POST | `/auth/register` | Регистрация (pending + OTP, без токенов) |
+| POST | `/auth/otp/verify` | Подтверждение OTP регистрации → сессия |
+| POST | `/auth/otp/resend` | Повторная отправка OTP |
+| POST | `/auth/login` | Вход (403 `EMAIL_NOT_VERIFIED`, если email не подтверждён) |
+| POST | `/auth/password/forgot` | Запрос OTP для сброса пароля |
+| POST | `/auth/password/reset` | Сброс пароля по OTP → новая сессия |
 | POST | `/auth/refresh` | Обновление access-токена |
 | POST | `/auth/logout` | Отзыв refresh-токена |
 | GET | `/auth/me` | Текущий пользователь |

@@ -21,6 +21,35 @@ export const googleLoginValidator = [
   body('idToken').isString().notEmpty().withMessage('idToken обязателен'),
 ];
 
+export const otpVerifyValidator = [
+  body('email').isEmail().withMessage('Некорректный email'),
+  body('code')
+    .isString()
+    .matches(/^\d{6}$/)
+    .withMessage('Код должен состоять из 6 цифр'),
+  body('purpose').equals('register').withMessage('purpose должен быть register'),
+];
+
+export const otpResendValidator = [
+  body('email').isEmail().withMessage('Некорректный email'),
+  body('purpose')
+    .isIn(['register', 'password_reset'])
+    .withMessage('purpose должен быть register или password_reset'),
+];
+
+export const passwordForgotValidator = [
+  body('email').isEmail().withMessage('Некорректный email'),
+];
+
+export const passwordResetValidator = [
+  body('email').isEmail().withMessage('Некорректный email'),
+  body('code')
+    .isString()
+    .matches(/^\d{6}$/)
+    .withMessage('Код должен состоять из 6 цифр'),
+  body('newPassword').isLength({ min: 8 }).withMessage('Пароль минимум 8 символов'),
+];
+
 export const updateProfileValidator = [
   body('bio')
     .optional({ values: 'null' })

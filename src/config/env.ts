@@ -11,11 +11,24 @@ function required(name: string): string {
   return value;
 }
 
+function optionalWithProdRequired(name: string, devDefault: string): string {
+  const value = process.env[name];
+  if (value) {
+    return value;
+  }
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(`Отсутствует обязательная переменная окружения: ${name}`);
+  }
+  return devDefault;
+}
+
 const port = Number(process.env.PORT) || 3000;
 const storageDriver = process.env.STORAGE_DRIVER === 'r2' ? 'r2' : 'local';
+const nodeEnv = process.env.NODE_ENV || 'development';
 
 const env = {
   port,
+  nodeEnv,
   mongoUri: required('MONGO_URI'),
   jwtAccessSecret: required('JWT_ACCESS_SECRET'),
   jwtAccessTtl: process.env.JWT_ACCESS_TTL || '15m',
@@ -50,6 +63,19 @@ const env = {
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean),
+  otpTtlSec: Number(process.env.OTP_TTL_SEC) || 600,
+  otpResendCooldownSec: Number(process.env.OTP_RESEND_COOLDOWN_SEC) || 60,
+  otpMaxAttempts: Number(process.env.OTP_MAX_ATTEMPTS) || 5,
+  otpMaxResendPerHour: Number(process.env.OTP_MAX_RESEND_PER_HOUR) || 5,
+  otpPepper: optionalWithProdRequired('OTP_PEPPER', 'dev-only-otp-pepper-change-me'),
+  otpDevLog: process.env.OTP_DEV_LOG === 'true',
+  otpDefaultLocale: process.env.OTP_DEFAULT_LOCALE === 'en' ? 'en' : 'ru',
+  smtpHost: process.env.SMTP_HOST || '',
+  smtpPort: Number(process.env.SMTP_PORT) || 587,
+  smtpSecure: process.env.SMTP_SECURE === 'true',
+  smtpUser: process.env.SMTP_USER || '',
+  smtpPass: process.env.SMTP_PASS || '',
+  smtpFrom: process.env.SMTP_FROM || process.env.EMAIL_FROM || 'Hive <noreply@localhost>',
 } as const;
 
 export default env;

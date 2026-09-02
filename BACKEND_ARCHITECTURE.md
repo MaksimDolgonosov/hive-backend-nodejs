@@ -142,14 +142,34 @@ hive-backend-nodejs/
 ```ts
 {
   email: string;          // unique, lowercase
-  passwordHash: string;
+  passwordHash: string | null;
   username: string;       // unique
+  emailVerified: boolean; // false до OTP
+  status: 'pending' | 'active' | 'disabled';
   avatarUrl: string | null;
   createdAt, updatedAt   // timestamps
 }
 ```
 
-### 4.2 `RefreshToken`
+### 4.2 `EmailOtpChallenge`
+
+Одноразовые коды email (регистрация и сброс пароля). В БД хранится только `codeHash` (HMAC-SHA256), plaintext — только в письме.
+
+```ts
+{
+  userId: ObjectId | null;
+  email: string;          // lowercase
+  purpose: 'register' | 'password_reset';
+  codeHash: string;
+  expiresAt: Date;        // TTL кода, 10 минут
+  attempts: number;
+  consumedAt: Date | null;
+  lastSentAt: Date;       // cooldown resend 60 с
+  createdAt: Date;
+}
+```
+
+### 4.3 `RefreshToken`
 
 ```ts
 {
@@ -162,7 +182,7 @@ hive-backend-nodejs/
 }
 ```
 
-### 4.3 `Sting`
+### 4.4 `Sting`
 
 ```ts
 {
@@ -181,7 +201,7 @@ hive-backend-nodejs/
 
 Индексы: `2dsphere` на `location`, TTL на `expiresAt`, `{ authorId, createdAt }`, sparse `{ hiveId }`, unique sparse `{ authorId, idempotencyKey }`.
 
-### 4.4 `Hive`
+### 4.5 `Hive`
 
 ```ts
 {

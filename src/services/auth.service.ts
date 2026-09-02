@@ -10,7 +10,10 @@ import { uploadAvatarImage, deleteAvatarImage } from './storage.service';
 import { AppError } from '../utils/AppError';
 import { mergeSocialLinks, serializeSocialLinks } from '../utils/social-links';
 import { UpdateProfileInput, UserSocialLinks } from '../types/profile-user';
+import { EmailLocale, normalizeEmail } from '../utils/otp';
 import { verifyGoogleIdToken } from './google-auth.service';
+import { consumeValidOtp, issueOtpChallenge, OtpDispatchResult } from './otp.service';
+import { OtpPurpose } from '../models/EmailOtpChallenge';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -146,6 +149,8 @@ async function findOrCreateGoogleUser(payload: {
     }
 
     byEmail.googleId = payload.sub;
+    byEmail.emailVerified = true;
+    byEmail.status = 'active';
     if (!byEmail.avatarUrl && payload.picture) {
       byEmail.avatarUrl = payload.picture;
     }
@@ -159,37 +164,107 @@ async function findOrCreateGoogleUser(payload: {
     googleId: payload.sub,
     avatarUrl: payload.picture,
     passwordHash: null,
+    emailVerified: true,
+    status: 'active',
   });
 }
 
-export async function register(input: RegisterInput): Promise<{ user: PublicUser; tokens: AuthTokens }> {
-  const normalizedEmail = input.email.trim().toLowerCase();
-  const normalizedUsername = input.username.trim();
+function isEmailVerified(user: IUser): boolean {
+  if (user.status === 'pending') {
+    return false;
+  }
+  return user.emailVerified !== false;
+}
 
+async function assertUsernameAvailable(username: string, exceptUserId?: string): Promise<void> {
   const existing = await User.findOne({
-    $or: [{ email: normalizedEmail }, { username: normalizedUsername }],
+    username,
+    ...(exceptUserId ? { _id: { $ne: exceptUserId } } : {}),
   });
   if (existing) {
     throw new AppError(409, 'USER_ALREADY_EXISTS', 'Email или username уже заняты');
   }
+}
 
+async function revokeAllRefreshTokens(userId: string): Promise<void> {
+  await RefreshToken.updateMany(
+    { userId, revokedAt: null },
+    { $set: { revokedAt: new Date() } },
+  );
+}
+
+export async function register(
+  input: RegisterInput,
+  locale?: EmailLocale,
+): Promise<OtpDispatchResult> {
+  const normalizedEmail = normalizeEmail(input.email);
+  const normalizedUsername = input.username.trim();
   const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
+
+  const existingByEmail = await User.findOne({ email: normalizedEmail });
+  if (existingByEmail && isEmailVerified(existingByEmail)) {
+    throw new AppError(409, 'USER_ALREADY_EXISTS', 'Email или username уже заняты');
+  }
+
+  if (existingByEmail) {
+    await assertUsernameAvailable(normalizedUsername, existingByEmail.id);
+    existingByEmail.passwordHash = passwordHash;
+    existingByEmail.username = normalizedUsername;
+    existingByEmail.status = 'pending';
+    existingByEmail.emailVerified = false;
+    await existingByEmail.save();
+
+    return issueOtpChallenge({
+      email: normalizedEmail,
+      purpose: 'register',
+      userId: existingByEmail.id,
+      locale,
+      status: 'otp_required',
+      skipCooldown: true,
+    });
+  }
+
+  await assertUsernameAvailable(normalizedUsername);
+
   const user = await User.create({
     email: normalizedEmail,
     username: normalizedUsername,
     passwordHash,
+    emailVerified: false,
+    status: 'pending',
   });
 
-  const tokens = await issueTokens(user.id);
-  return { user: toPublicUser(user), tokens };
+  return issueOtpChallenge({
+    email: normalizedEmail,
+    purpose: 'register',
+    userId: user.id,
+    locale,
+    status: 'otp_required',
+    skipCooldown: true,
+  });
+}
+
+function assertAccountCanLogin(user: IUser): void {
+  if (user.status === 'disabled') {
+    throw new AppError(403, 'ACCOUNT_DISABLED', 'Аккаунт заблокирован');
+  }
+
+  if (!isEmailVerified(user) || user.status === 'pending') {
+    throw new AppError(403, 'EMAIL_NOT_VERIFIED', 'Email is not verified', {
+      email: user.email,
+      purpose: 'register',
+    });
+  }
 }
 
 export async function login(input: LoginInput): Promise<{ user: PublicUser; tokens: AuthTokens }> {
-  const user = await User.findOne({ email: input.email.toLowerCase() });
+  const user = await User.findOne({ email: normalizeEmail(input.email) });
 
   if (!user?.passwordHash || !(await bcrypt.compare(input.password, user.passwordHash))) {
     throw new AppError(401, 'INVALID_CREDENTIALS', 'Неверный email или пароль');
   }
+
+  assertAccountCanLogin(user);
 
   const tokens = await issueTokens(user.id);
   return { user: toPublicUser(user), tokens };
@@ -200,6 +275,124 @@ export async function loginWithGoogle(
 ): Promise<{ user: PublicUser; tokens: AuthTokens }> {
   const payload = await verifyGoogleIdToken(input.idToken);
   const user = await findOrCreateGoogleUser(payload);
+  if (user.status === 'disabled') {
+    throw new AppError(403, 'ACCOUNT_DISABLED', 'Аккаунт заблокирован');
+  }
+  const tokens = await issueTokens(user.id);
+  return { user: toPublicUser(user), tokens };
+}
+
+export async function verifyRegisterOtp(input: {
+  email: string;
+  code: string;
+  purpose: OtpPurpose;
+}): Promise<{ user: PublicUser; tokens: AuthTokens }> {
+  if (input.purpose !== 'register') {
+    throw new AppError(400, 'VALIDATION_ERROR', 'Для этого эндпоинта допустим только purpose=register');
+  }
+
+  const email = normalizeEmail(input.email);
+  const { userId } = await consumeValidOtp({
+    email,
+    code: input.code,
+    purpose: 'register',
+  });
+
+  const user = userId
+    ? await User.findById(userId)
+    : await User.findOne({ email, emailVerified: false });
+
+  if (!user) {
+    throw new AppError(404, 'OTP_NOT_FOUND', 'Активный код не найден');
+  }
+
+  user.emailVerified = true;
+  user.status = 'active';
+  await user.save();
+
+  const tokens = await issueTokens(user.id);
+  return { user: toPublicUser(user), tokens };
+}
+
+export async function resendOtp(
+  input: { email: string; purpose: OtpPurpose },
+  locale?: EmailLocale,
+): Promise<OtpDispatchResult> {
+  const email = normalizeEmail(input.email);
+  const success = (): OtpDispatchResult => ({
+    status: 'otp_sent',
+    email,
+    purpose: input.purpose,
+    expiresInSec: env.otpTtlSec,
+    resendAvailableInSec: env.otpResendCooldownSec,
+  });
+
+  if (input.purpose === 'password_reset') {
+    const user = await User.findOne({ email, status: { $ne: 'disabled' } });
+    const canReset = Boolean(user && isEmailVerified(user));
+    return issueOtpChallenge({
+      email,
+      purpose: 'password_reset',
+      userId: canReset ? user!.id : null,
+      locale,
+      sendEmail: canReset,
+    });
+  }
+
+  const user = await User.findOne({ email, emailVerified: false, status: 'pending' });
+  if (!user) {
+    return success();
+  }
+
+  return issueOtpChallenge({
+    email,
+    purpose: 'register',
+    userId: user.id,
+    locale,
+  });
+}
+
+export async function forgotPassword(
+  emailRaw: string,
+  locale?: EmailLocale,
+): Promise<OtpDispatchResult> {
+  const email = normalizeEmail(emailRaw);
+  const user = await User.findOne({ email, status: { $ne: 'disabled' } });
+  const canReset = Boolean(user && isEmailVerified(user));
+
+  return issueOtpChallenge({
+    email,
+    purpose: 'password_reset',
+    userId: canReset ? user!.id : null,
+    locale,
+    sendEmail: canReset,
+  });
+}
+
+export async function resetPassword(input: {
+  email: string;
+  code: string;
+  newPassword: string;
+}): Promise<{ user: PublicUser; tokens: AuthTokens }> {
+  const email = normalizeEmail(input.email);
+  const { userId } = await consumeValidOtp({
+    email,
+    code: input.code,
+    purpose: 'password_reset',
+  });
+
+  const user = userId
+    ? await User.findById(userId)
+    : await User.findOne({ email });
+
+  if (!user || !isEmailVerified(user)) {
+    throw new AppError(400, 'OTP_INVALID', 'Неверный код');
+  }
+
+  user.passwordHash = await bcrypt.hash(input.newPassword, BCRYPT_ROUNDS);
+  await user.save();
+  await revokeAllRefreshTokens(user.id);
+
   const tokens = await issueTokens(user.id);
   return { user: toPublicUser(user), tokens };
 }

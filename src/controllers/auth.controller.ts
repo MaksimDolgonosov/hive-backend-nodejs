@@ -1,11 +1,21 @@
 import { NextFunction, Request, Response } from 'express';
 import * as authService from '../services/auth.service';
 import * as profileService from '../services/profile.service';
+import env from '../config/env';
 import { AppError } from '../utils/AppError';
+import { resolveLocale } from '../utils/otp';
+
+function localeFromRequest(req: Request) {
+  return resolveLocale({
+    header: typeof req.headers['accept-language'] === 'string' ? req.headers['accept-language'] : undefined,
+    query: typeof req.body?.locale === 'string' ? req.body.locale : undefined,
+    defaultLocale: env.otpDefaultLocale,
+  });
+}
 
 export async function register(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const result = await authService.register(req.body);
+    const result = await authService.register(req.body, localeFromRequest(req));
     res.status(201).json(result);
   } catch (err) {
     next(err);
@@ -24,6 +34,42 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
 export async function loginWithGoogle(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const result = await authService.loginWithGoogle(req.body);
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function verifyOtp(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const result = await authService.verifyRegisterOtp(req.body);
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function resendOtp(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const result = await authService.resendOtp(req.body, localeFromRequest(req));
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function forgotPassword(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const result = await authService.forgotPassword(req.body.email, localeFromRequest(req));
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function resetPassword(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const result = await authService.resetPassword(req.body);
     res.status(200).json(result);
   } catch (err) {
     next(err);
