@@ -42,6 +42,34 @@ function getTransporter(): Transporter {
   return transporter;
 }
 
+function buildOtpHtml(title: string, code: string, footer: string): string {
+  return `<!DOCTYPE html>
+<html lang="ru">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f4f5;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:420px;background:#ffffff;border-radius:12px;padding:32px 28px;">
+          <tr>
+            <td style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+              <p style="margin:0 0 20px;font-size:16px;line-height:1.5;color:#3f3f46;">${title}</p>
+              <p style="margin:0 0 20px;font-size:36px;font-weight:700;line-height:1.2;letter-spacing:6px;color:#18181b;text-align:center;">${code}</p>
+              <p style="margin:0;font-size:14px;line-height:1.5;color:#71717a;">${footer}</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+function buildOtpText(title: string, code: string, footer: string): string {
+  return `${title}\n\n${code}\n\n${footer}`;
+}
+
 function buildOtpMessage(
   purpose: OtpPurpose,
   code: string,
@@ -49,35 +77,39 @@ function buildOtpMessage(
 ): { subject: string; text: string; html: string } {
   if (purpose === 'register') {
     if (locale === 'en') {
-      const text = `Hive verification code: ${code}. Valid for 10 minutes.`;
+      const title = 'Hive verification code';
+      const footer = 'Valid for 10 minutes.';
       return {
-        subject: 'Hive verification code',
-        text,
-        html: `<p>Hive verification code: <strong>${code}</strong>. Valid for 10 minutes.</p>`,
+        subject: title,
+        text: buildOtpText(title, code, footer),
+        html: buildOtpHtml(title, code, footer),
       };
     }
-    const text = `Код подтверждения Hive: ${code}. Действует 10 минут.`;
+    const title = 'Код подтверждения Hive';
+    const footer = 'Действует 10 минут.';
     return {
-      subject: 'Код подтверждения Hive',
-      text,
-      html: `<p>Код подтверждения Hive: <strong>${code}</strong>. Действует 10 минут.</p>`,
+      subject: title,
+      text: buildOtpText(title, code, footer),
+      html: buildOtpHtml(title, code, footer),
     };
   }
 
   if (locale === 'en') {
-    const text = `Hive password reset code: ${code}. If you didn't request this, ignore this email.`;
+    const title = 'Hive password reset code';
+    const footer = "If you didn't request this, ignore this email.";
     return {
-      subject: 'Hive password reset code',
-      text,
-      html: `<p>Hive password reset code: <strong>${code}</strong>. If you didn't request this, ignore this email.</p>`,
+      subject: title,
+      text: buildOtpText(title, code, footer),
+      html: buildOtpHtml(title, code, footer),
     };
   }
 
-  const text = `Код для сброса пароля Hive: ${code}. Если вы не запрашивали сброс — игнорируйте письмо.`;
+  const title = 'Код для сброса пароля Hive';
+  const footer = 'Если вы не запрашивали сброс — игнорируйте письмо.';
   return {
-    subject: 'Код для сброса пароля Hive',
-    text,
-    html: `<p>Код для сброса пароля Hive: <strong>${code}</strong>. Если вы не запрашивали сброс — игнорируйте письмо.</p>`,
+    subject: title,
+    text: buildOtpText(title, code, footer),
+    html: buildOtpHtml(title, code, footer),
   };
 }
 
