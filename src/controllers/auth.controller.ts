@@ -179,3 +179,12 @@ export async function updateProfile(req: Request, res: Response, next: NextFunct
     next(err);
   }
 }
+
+export async function deleteAccount(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    await authService.deleteAccount(req.user!.id);
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+}

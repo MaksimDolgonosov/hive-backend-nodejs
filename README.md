@@ -110,6 +110,7 @@ WebSocket: **http://localhost:3000/ws?token=accessToken**
 | POST | `/auth/refresh` | Обновление access-токена |
 | POST | `/auth/logout` | Отзыв refresh-токена |
 | GET | `/auth/me` | Текущий пользователь |
+| DELETE | `/auth/me` | Удаление аккаунта и связанных данных |
 | POST | `/auth/me/avatar` | Загрузка аватара (multipart, поле `avatar`) |
 | DELETE | `/auth/me/avatar` | Удаление аватара |
 

@@ -13,6 +13,7 @@ import { UpdateProfileInput, UserSocialLinks } from '../types/profile-user';
 import { EmailLocale, normalizeEmail } from '../utils/otp';
 import { verifyGoogleIdToken } from './google-auth.service';
 import { consumeValidOtp, issueOtpChallenge, OtpDispatchResult } from './otp.service';
+import { deleteAccount as purgeAccount } from './account-deletion.service';
 import { OtpPurpose } from '../models/EmailOtpChallenge';
 
 const BCRYPT_ROUNDS = 12;
@@ -485,6 +486,10 @@ export async function updateProfile(
 
   await user.save();
   return { user: toPublicUser(user) };
+}
+
+export async function deleteAccount(userId: string): Promise<void> {
+  await purgeAccount(userId);
 }
 
 export async function loadAuthorSummaries(

@@ -350,6 +350,7 @@ Local: раздача через `express.static` на `/uploads`. URL стро�
 | POST | `/auth/refresh` |
 | POST | `/auth/logout` |
 | GET | `/auth/me` |
+| DELETE | `/auth/me` — удаление аккаунта, фото, реакций, сессий |
 | POST | `/auth/me/avatar` — multipart, поле `avatar` (JPEG, ≤2 МБ) |
 | DELETE | `/auth/me/avatar` |
 

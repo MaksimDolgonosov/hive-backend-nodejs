@@ -73,6 +73,7 @@ router.post('/logout', refreshValidator, handleValidation, authController.logout
 router.post('/me/avatar', requireAuth, handleAvatarUpload, authController.uploadAvatar);
 router.delete('/me/avatar', requireAuth, authController.removeAvatar);
 router.patch('/me', requireAuth, updateProfileValidator, handleValidation, authController.updateProfile);
+router.delete('/me', requireAuth, authController.deleteAccount);
 router.get('/me/stats', requireAuth, authController.meStats);
 router.get(
   '/me/stings',

@@ -381,6 +381,23 @@ paths:
                     $ref: '#/components/schemas/User'
         '401':
           $ref: '#/components/responses/Unauthorized'
+    delete:
+      tags: [auth]
+      summary: Удаление аккаунта и связанных персональных данных
+      description: |
+        Удаляет текущего пользователя, его сессии, OTP-челленджи, аватар,
+        опубликованные фото и реакции. Требуется для App Store Guideline 5.1.1(v).
+      responses:
+        '204':
+          description: Аккаунт удалён
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Пользователь не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /auth/me/avatar:
     post:
