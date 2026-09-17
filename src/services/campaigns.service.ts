@@ -153,11 +153,12 @@ export async function createCampaign(input: CreateCampaignInput): Promise<ICampa
     title: input.title,
     i18nKey: input.i18nKey,
     geoType: input.geo.type,
-    center:
-      input.geo.type === 'radius'
-        ? { type: 'Point', coordinates: [input.geo.center.lng, input.geo.center.lat] }
-        : null,
-    radiusM: input.geo.type === 'radius' ? input.geo.radiusM : null,
+    ...(input.geo.type === 'radius'
+      ? {
+          center: { type: 'Point' as const, coordinates: [input.geo.center.lng, input.geo.center.lat] },
+          radiusM: input.geo.radiusM,
+        }
+      : { zoneIds: input.geo.zoneIds }),
     zoneIds: input.geo.type === 'zones' ? input.geo.zoneIds : [],
     startsAt: input.startsAt,
     endsAt: input.endsAt,

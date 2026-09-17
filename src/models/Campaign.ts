@@ -12,8 +12,8 @@ export interface ICampaign extends Document {
   center: {
     type: 'Point';
     coordinates: [number, number];
-  } | null;
-  radiusM: number | null;
+  } | null | undefined;
+  radiusM: number | null | undefined;
   zoneIds: string[];
   startsAt: Date;
   endsAt: Date;
@@ -40,9 +40,8 @@ const campaignSchema = new Schema<ICampaign>(
       coordinates: {
         type: [Number],
       },
-      default: null,
     },
-    radiusM: { type: Number, default: null },
+    radiusM: { type: Number },
     zoneIds: { type: [String], default: [] },
     startsAt: { type: Date, required: true },
     endsAt: { type: Date, required: true },
