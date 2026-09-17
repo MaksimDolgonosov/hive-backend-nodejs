@@ -5,6 +5,16 @@ export const nearbyValidator = [
   query('swLng').isFloat({ min: -180, max: 180 }).withMessage('swLng должен быть от -180 до 180'),
   query('neLat').isFloat({ min: -90, max: 90 }).withMessage('neLat должен быть от -90 до 90'),
   query('neLng').isFloat({ min: -180, max: 180 }).withMessage('neLng должен быть от -180 до 180'),
+  query('includeEchoes').optional().isBoolean().withMessage('includeEchoes должен быть boolean'),
+  query('includeSeeds').optional().isBoolean().withMessage('includeSeeds должен быть boolean'),
+  query('minResults').optional().isInt({ min: 0, max: 50 }).withMessage('minResults должен быть от 0 до 50'),
+  query('maxRadiusM').optional().isInt({ min: 1, max: 200000 }).withMessage('maxRadiusM слишком большой'),
+];
+
+export const nearestValidator = [
+  query('lat').isFloat({ min: -90, max: 90 }).withMessage('lat должен быть от -90 до 90'),
+  query('lng').isFloat({ min: -180, max: 180 }).withMessage('lng должен быть от -180 до 180'),
+  query('limit').optional().isInt({ min: 1, max: 10 }).withMessage('limit должен быть от 1 до 10'),
 ];
 
 export const createStingValidator = [

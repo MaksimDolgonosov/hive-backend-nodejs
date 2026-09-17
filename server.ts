@@ -4,12 +4,14 @@ import connectDb from './src/config/db';
 import env from './src/config/env';
 import { startStingDeletionWatcher } from './src/services/hive-cleanup.service';
 import { initModerationModel } from './src/services/moderation.service';
+import { startGrowthWorkers } from './src/services/workers.service';
 import { initRealtime } from './src/sockets/realtime';
 
 async function start(): Promise<void> {
   await connectDb();
   await startStingDeletionWatcher();
   await initModerationModel();
+  startGrowthWorkers();
 
   const server = http.createServer(app);
   initRealtime(server);

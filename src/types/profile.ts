@@ -4,6 +4,7 @@ export interface ProfileStats {
   photos: number;
   hives: number;
   likes: number;
+  awards: number;
 }
 
 export interface ProfileOverview {

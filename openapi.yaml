@@ -21,6 +21,24 @@ tags:
     description: Публикация и просмотр жал
   - name: hives
     description: Просмотр ульев (кластеров жал)
+  - name: zones
+    description: Гео-зоны плотности и TTL
+  - name: map
+    description: Обзор карты на дальнем зуме
+  - name: campaigns
+    description: Час улья и событийные кампании
+  - name: invites
+    description: Инвайты и атрибуция
+  - name: waitlist
+    description: Гео-вейтлист
+  - name: devices
+    description: Push-устройства
+  - name: notifications
+    description: Настройки уведомлений
+  - name: analytics
+    description: События роста
+  - name: admin
+    description: Админ-эндпоинты роста
 
 security:
   - bearerAuth: []
@@ -284,6 +302,41 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /auth/me/awards:
+    get:
+      tags: [auth]
+      summary: Награды текущего пользователя
+      parameters:
+        - in: query
+          name: cursor
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20, maximum: 50 }
+      responses:
+        '200':
+          description: Страница наград
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/me/settings:
+    patch:
+      tags: [auth]
+      summary: allowEcho и allowSharing
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                allowEcho: { type: boolean }
+                allowSharing: { type: boolean }
+      responses:
+        '200':
+          description: Настройки приватности
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /auth/me/stings:
     get:
       tags: [auth]
@@ -457,6 +510,18 @@ paths:
         - $ref: '#/components/parameters/SwLng'
         - $ref: '#/components/parameters/NeLat'
         - $ref: '#/components/parameters/NeLng'
+        - in: query
+          name: includeEchoes
+          schema: { type: boolean, default: false }
+        - in: query
+          name: includeSeeds
+          schema: { type: boolean, default: false }
+        - in: query
+          name: minResults
+          schema: { type: integer, minimum: 0, maximum: 50, default: 0 }
+        - in: query
+          name: maxRadiusM
+          schema: { type: integer, minimum: 1, default: 50000 }
       responses:
         '200':
           description: Список жал и ульев в bounding box
@@ -473,10 +538,56 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Hive'
+                  echoes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        cellId: { type: string }
+                        center: { $ref: '#/components/schemas/GeoPoint' }
+                        count: { type: integer }
+                        lastSeenAt: { type: string, format: date-time }
+                  appliedBounds:
+                    $ref: '#/components/schemas/GeoPoint'
+                  expanded:
+                    type: boolean
+                  appliedRadiusM:
+                    type: number
         '401':
           $ref: '#/components/responses/Unauthorized'
         '422':
           $ref: '#/components/responses/ValidationError'
+
+  /stings/nearest:
+    get:
+      tags: [stings]
+      summary: Ближайшие активные жала
+      parameters:
+        - in: query
+          name: lat
+          required: true
+          schema: { type: number }
+        - in: query
+          name: lng
+          required: true
+          schema: { type: number }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 10, default: 1 }
+      responses:
+        '200':
+          description: Ближайшие жала и дистанция в метрах
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stings:
+                    type: array
+                    items: { $ref: '#/components/schemas/Sting' }
+                  distanceM:
+                    type: number
+                    nullable: true
 
   /stings:
     post:
@@ -528,6 +639,24 @@ paths:
                 properties:
                   sting:
                     $ref: '#/components/schemas/Sting'
+                  ttlSec:
+                    type: integer
+                  zone:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      status: { type: string, enum: [open, waitlist] }
+                      ttlSec: { type: integer }
+                  awards:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                          enum: [zone_first, zone_revival, hive_ignited, hive_founder]
+                        zoneId: { type: string }
+                        createdAt: { type: string, format: date-time }
         '401':
           $ref: '#/components/responses/Unauthorized'
         '422':
@@ -646,6 +775,168 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+
+  # ---------------------------------------------------------------------
+  # GROWTH
+  # ---------------------------------------------------------------------
+  /zones/current:
+    get:
+      tags: [zones]
+      summary: Текущая зона и TTL до съёмки
+      parameters:
+        - in: query
+          name: lat
+          required: true
+          schema: { type: number }
+        - in: query
+          name: lng
+          required: true
+          schema: { type: number }
+      responses:
+        '200':
+          description: Зона
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  zone:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      status: { type: string, enum: [open, waitlist] }
+                      ttlSec: { type: integer }
+                      activeStings: { type: integer }
+                      isFirstEver: { type: boolean }
+                      waitlistCount: { type: integer }
+                      threshold: { type: integer }
+
+  /map/overview:
+    get:
+      tags: [map]
+      summary: Агрегаты карты на дальнем зуме
+      parameters:
+        - $ref: '#/components/parameters/SwLat'
+        - $ref: '#/components/parameters/SwLng'
+        - $ref: '#/components/parameters/NeLat'
+        - $ref: '#/components/parameters/NeLng'
+        - in: query
+          name: zoom
+          required: true
+          schema: { type: number }
+      responses:
+        '200':
+          description: Кластеры без фото отдельных жал
+
+  /campaigns/active:
+    get:
+      tags: [campaigns]
+      summary: Активные кампании в точке
+      parameters:
+        - in: query
+          name: lat
+          required: true
+          schema: { type: number }
+        - in: query
+          name: lng
+          required: true
+          schema: { type: number }
+      responses:
+        '200':
+          description: Список кампаний
+
+  /invites:
+    post:
+      tags: [invites]
+      summary: Создать инвайт-код
+      responses:
+        '201':
+          description: Код создан
+
+  /invites/me:
+    get:
+      tags: [invites]
+      summary: Инвайты текущего пользователя
+
+  /invites/{code}:
+    get:
+      tags: [invites]
+      security: []
+      summary: Публичная проверка кода
+      parameters:
+        - in: path
+          name: code
+          required: true
+          schema: { type: string }
+
+  /waitlist:
+    post:
+      tags: [waitlist]
+      security: []
+      summary: Заявка в гео-вейтлист
+      responses:
+        '404':
+          description: FEATURE_DISABLED, если WAITLIST_ENABLED=false
+
+  /devices:
+    post:
+      tags: [devices]
+      summary: Зарегистрировать Expo push token
+      responses:
+        '204':
+          description: Сохранено
+
+  /devices/{deviceId}:
+    delete:
+      tags: [devices]
+      summary: Удалить устройство
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema: { type: string }
+      responses:
+        '204':
+          description: Удалено
+
+  /notifications/settings:
+    get:
+      tags: [notifications]
+      summary: Настройки пушей
+    patch:
+      tags: [notifications]
+      summary: Частичное обновление настроек пушей
+
+  /analytics/events:
+    post:
+      tags: [analytics]
+      security: []
+      summary: Батч клиентских событий роста
+
+  /admin/campaigns:
+    post:
+      tags: [admin]
+      summary: Создать кампанию (роль admin)
+
+  /admin/users/{id}/account-type:
+    post:
+      tags: [admin]
+      summary: Сменить accountType пользователя
+
+  /admin/metrics/density:
+    get:
+      tags: [admin]
+      summary: Метрики плотности зоны
+
+  /admin/metrics/retention:
+    get:
+      tags: [admin]
+      summary: Retention по зоне первой сессии
+
+  /admin/metrics/growth:
+    get:
+      tags: [admin]
+      summary: kFactor и виральные метрики
 
   # ---------------------------------------------------------------------
   # HIVES
@@ -1011,10 +1302,16 @@ components:
       properties:
         id:
           type: string
-          format: uuid
         authorId:
           type: string
-          format: uuid
+        authorUsername:
+          type: string
+        authorAvatarUrl:
+          type: string
+          nullable: true
+        authorAccountType:
+          type: string
+          enum: [personal, partner, official]
         imageUrl:
           type: string
           format: uri
@@ -1025,21 +1322,23 @@ components:
           $ref: '#/components/schemas/GeoPoint'
         hiveId:
           type: string
-          format: uuid
           nullable: true
-          description: null, если жало пока не вошло в кластер
         createdAt:
           type: string
           format: date-time
         expiresAt:
           type: string
           format: date-time
-          description: createdAt + 4 часа
         reactionsCount:
           type: integer
+        comment:
+          type: string
+          nullable: true
+        shareUrl:
+          type: string
+          nullable: true
         hasLiked:
           type: boolean
-          description: Поставил ли текущий пользователь like (только для авторизованных запросов)
       required:
         - id
         - authorId
@@ -1050,20 +1349,34 @@ components:
         - createdAt
         - expiresAt
         - reactionsCount
+        - shareUrl
 
     Hive:
       type: object
       properties:
         id:
           type: string
-          format: uuid
         center:
           $ref: '#/components/schemas/GeoPoint'
         radiusM:
           type: number
-          format: float
         activeStingsCount:
           type: integer
+        activationCount:
+          type: integer
+        contributorsCount:
+          type: integer
+        stage:
+          type: string
+          enum: [seed, hive]
+        topContributors:
+          type: array
+          items:
+            type: object
+            properties:
+              userId: { type: string }
+              username: { type: string }
+              avatarUrl: { type: string, nullable: true }
         createdAt:
           type: string
           format: date-time
@@ -1075,6 +1388,9 @@ components:
         - center
         - radiusM
         - activeStingsCount
+        - activationCount
+        - contributorsCount
+        - stage
         - createdAt
         - updatedAt
 

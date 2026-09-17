@@ -7,6 +7,7 @@ import handleValidation from '../middleware/validate.middleware';
 import {
   createStingValidator,
   nearbyValidator,
+  nearestValidator,
   reactionValidator,
   stingIdValidator,
 } from '../validators/stings.validators';
@@ -14,6 +15,7 @@ import {
 const router = Router();
 
 router.get('/nearby', requireAuth, nearbyValidator, handleValidation, stingsController.nearby);
+router.get('/nearest', requireAuth, nearestValidator, handleValidation, stingsController.nearest);
 router.post(
   '/',
   requireAuth,

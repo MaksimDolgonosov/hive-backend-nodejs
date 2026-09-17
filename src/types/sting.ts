@@ -1,3 +1,7 @@
+import { AccountType } from '../models/User';
+import { HiveStage } from '../utils/activation';
+import { PublicContributor } from './growth';
+
 export interface GeoPoint {
   lat: number;
   lng: number;
@@ -8,6 +12,7 @@ export interface PublicSting {
   authorId: string;
   authorUsername: string;
   authorAvatarUrl: string | null;
+  authorAccountType: AccountType;
   imageUrl: string;
   thumbnailUrl: string;
   location: GeoPoint;
@@ -16,6 +21,7 @@ export interface PublicSting {
   expiresAt: string;
   reactionsCount: number;
   comment: string | null;
+  shareUrl: string | null;
   hasLiked?: boolean;
 }
 
@@ -24,6 +30,10 @@ export interface PublicHive {
   center: GeoPoint;
   radiusM: number;
   activeStingsCount: number;
+  activationCount: number;
+  contributorsCount: number;
+  stage: HiveStage;
+  topContributors: PublicContributor[];
   createdAt: string;
   updatedAt: string;
 }

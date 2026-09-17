@@ -1,4 +1,6 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Document, Schema, Types } from 'mongoose';
+
+import { HiveStage } from '../utils/activation';
 
 export interface IHive extends Document {
   center: {
@@ -7,6 +9,11 @@ export interface IHive extends Document {
   };
   radiusM: number;
   activeStingsCount: number;
+  activationCount: number;
+  contributorsCount: number;
+  stage: HiveStage;
+  founderUserId: Types.ObjectId | null;
+  ignitedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -26,10 +33,16 @@ const hiveSchema = new Schema<IHive>(
     },
     radiusM: { type: Number, default: 150 },
     activeStingsCount: { type: Number, default: 0 },
+    activationCount: { type: Number, default: 0 },
+    contributorsCount: { type: Number, default: 0 },
+    stage: { type: String, enum: ['seed', 'hive'], default: 'seed' },
+    founderUserId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    ignitedAt: { type: Date, default: null },
   },
   { timestamps: true },
 );
 
 hiveSchema.index({ center: '2dsphere' });
+hiveSchema.index({ stage: 1 });
 
 export default mongoose.model<IHive>('Hive', hiveSchema);

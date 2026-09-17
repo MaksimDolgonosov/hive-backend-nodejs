@@ -16,6 +16,7 @@ import {
   updateProfileValidator,
 } from '../validators/auth.validators';
 import { profileCollectionValidator } from '../validators/profile.validators';
+import { privacySettingsValidator } from '../validators/growth.validators';
 
 const router = Router();
 
@@ -75,6 +76,20 @@ router.delete('/me/avatar', requireAuth, authController.removeAvatar);
 router.patch('/me', requireAuth, updateProfileValidator, handleValidation, authController.updateProfile);
 router.delete('/me', requireAuth, authController.deleteAccount);
 router.get('/me/stats', requireAuth, authController.meStats);
+router.get(
+  '/me/awards',
+  requireAuth,
+  profileCollectionValidator,
+  handleValidation,
+  authController.meAwards,
+);
+router.patch(
+  '/me/settings',
+  requireAuth,
+  privacySettingsValidator,
+  handleValidation,
+  authController.patchSettings,
+);
 router.get(
   '/me/stings',
   requireAuth,

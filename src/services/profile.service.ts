@@ -11,6 +11,7 @@ import { serializeSocialLinks } from '../utils/social-links';
 import { mapPublicStings, toPublicHive } from '../utils/sting.mapper';
 import { getLikedStingIds } from './reactions.service';
 import { syncHiveDocument } from './hive-cleanup.service';
+import { countAwards } from './awards.service';
 
 const DEFAULT_PAGE_LIMIT = 20;
 const MAX_PAGE_LIMIT = 50;
@@ -52,11 +53,14 @@ export async function getActiveProfileOverview(userId: string): Promise<ProfileO
     }
   }
 
+  const awards = await countAwards(userId);
+
   return {
     stats: {
       photos: stings.length,
       hives: hiveIds.size,
       likes,
+      awards,
     },
     recentPhotos: stings.slice(0, 4).map((sting) => sting.thumbnailUrl),
   };

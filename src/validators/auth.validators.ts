@@ -6,6 +6,9 @@ export const registerValidator = [
   body('email').isEmail().withMessage('Некорректный email'),
   body('password').isLength({ min: 8 }).withMessage('Пароль минимум 8 символов'),
   body('username').isLength({ min: 3, max: 30 }).withMessage('Username от 3 до 30 символов'),
+  body('inviteCode').optional().isString().isLength({ min: 6, max: 16 }),
+  body('lat').optional().isFloat({ min: -90, max: 90 }),
+  body('lng').optional().isFloat({ min: -180, max: 180 }),
 ];
 
 export const loginValidator = [
@@ -19,6 +22,9 @@ export const refreshValidator = [
 
 export const googleLoginValidator = [
   body('idToken').isString().notEmpty().withMessage('idToken обязателен'),
+  body('inviteCode').optional().isString().isLength({ min: 6, max: 16 }),
+  body('lat').optional().isFloat({ min: -90, max: 90 }),
+  body('lng').optional().isFloat({ min: -180, max: 180 }),
 ];
 
 export const otpVerifyValidator = [

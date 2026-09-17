@@ -161,3 +161,17 @@ export async function sendOtpEmail(input: SendOtpEmailInput): Promise<void> {
     html,
   });
 }
+
+export async function sendZoneOpenedEmail(to: string): Promise<void> {
+  const subject = 'Ваш район открылся в Hive';
+  const text = 'Район, в который вы записались, теперь открыт. Откройте Hive и опубликуйте первый момент.';
+  const html = `<p>${text}</p>`;
+
+  if (isResendConfigured()) {
+    await sendViaResend(to, subject, text, html);
+    return;
+  }
+  if (isSmtpConfigured()) {
+    await getTransporter().sendMail({ from: env.smtpFrom, to, subject, text, html });
+  }
+}

@@ -62,7 +62,30 @@ const env = {
   r2PublicUrl: process.env.R2_PUBLIC_URL || '',
   hiveRadiusM: Number(process.env.HIVE_RADIUS_M) || 150,
   hiveActivationThreshold: Number(process.env.HIVE_ACTIVATION_THRESHOLD) || 3,
+  hiveAuthorWeightCap: Number(process.env.HIVE_AUTHOR_WEIGHT_CAP) || 2,
+  hiveTtlBonusSec:
+    process.env.HIVE_TTL_BONUS_SEC != null && process.env.HIVE_TTL_BONUS_SEC !== ''
+      ? Number(process.env.HIVE_TTL_BONUS_SEC)
+      : null,
   hiveCleanupIntervalMs: Number(process.env.HIVE_CLEANUP_INTERVAL_MS) || 60_000,
+  waitlistEnabled: process.env.WAITLIST_ENABLED === 'true',
+  waitlistThreshold: Number(process.env.WAITLIST_THRESHOLD) || 300,
+  publicAppUrl: process.env.PUBLIC_APP_URL || process.env.BASE_URL || `http://localhost:${port}`,
+  appStoreUrl: process.env.APP_STORE_URL || 'https://apps.apple.com',
+  playStoreUrl: process.env.PLAY_STORE_URL || 'https://play.google.com',
+  adminEmails: (process.env.ADMIN_EMAILS ?? '')
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean),
+  partnerDailyStingLimit: Number(process.env.PARTNER_DAILY_STING_LIMIT) || 30,
+  officialDailyStingLimit: Number(process.env.OFFICIAL_DAILY_STING_LIMIT) || 100,
+  awardMaxAccuracyM: Number(process.env.AWARD_MAX_ACCURACY_M) || 50,
+  zoneRecalcActiveMs: Number(process.env.ZONE_RECALC_ACTIVE_MS) || 5 * 60 * 1000,
+  zoneRecalcIdleMs: Number(process.env.ZONE_RECALC_IDLE_MS) || 60 * 60 * 1000,
+  campaignTickMs: Number(process.env.CAMPAIGN_TICK_MS) || 60_000,
+  pushTickMs: Number(process.env.PUSH_TICK_MS) || 60_000,
+  geocoderEnabled: process.env.GEOCODER_ENABLED === 'true',
+  expoAccessToken: process.env.EXPO_ACCESS_TOKEN || '',
   thumbnailWidth: Number(process.env.THUMBNAIL_WIDTH) || 400,
   thumbnailQuality: Number(process.env.THUMBNAIL_QUALITY) || 80,
   stingCapturedAtToleranceMs: Number(process.env.STING_CAPTURED_AT_TOLERANCE_MS) || 120_000,

@@ -19,9 +19,64 @@ export const stingCreateRateLimit = rateLimit({
   max: env.stingRateLimitMax,
   standardHeaders: true,
   legacyHeaders: false,
-  // requireAuth стоит перед этим middleware — ключ всегда по userId
+  skip: (req: Request): boolean =>
+    req.user?.accountType === 'partner' || req.user?.accountType === 'official',
   keyGenerator: (req: Request): string => req.user!.id,
   handler: tooManyRequestsHandler('RATE_LIMITED', 'Слишком много публикаций, попробуйте позже'),
+});
+
+export const inviteCreateRateLimit = rateLimit({
+  windowMs: 24 * 60 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: Request): string => req.user!.id,
+  handler: tooManyRequestsHandler('RATE_LIMITED', 'Слишком много приглашений, попробуйте позже'),
+});
+
+export const waitlistRateLimit = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: tooManyRequestsHandler('RATE_LIMITED', 'Слишком много заявок, попробуйте позже'),
+});
+
+export const shareRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: tooManyRequestsHandler('RATE_LIMITED', 'Слишком много запросов, попробуйте позже'),
+});
+
+export const analyticsRateLimit = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: Request): string => {
+    const deviceId =
+      typeof req.body?.deviceId === 'string'
+        ? req.body.deviceId
+        : typeof req.headers['x-device-id'] === 'string'
+          ? req.headers['x-device-id']
+          : '';
+    if (deviceId) {
+      return `device:${deviceId}`;
+    }
+    return req.user?.id ?? (req.ip ? ipKeyGenerator(req.ip) : 'unknown');
+  },
+  handler: tooManyRequestsHandler('RATE_LIMITED', 'Слишком много событий, попробуйте позже'),
+});
+
+export const deviceRegisterRateLimit = rateLimit({
+  windowMs: 24 * 60 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: Request): string => req.user!.id,
+  handler: tooManyRequestsHandler('RATE_LIMITED', 'Слишком много устройств, попробуйте позже'),
 });
 
 export const authIpRateLimit = rateLimit({

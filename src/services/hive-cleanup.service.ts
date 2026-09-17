@@ -6,10 +6,14 @@ import {
 } from '../sockets/realtime';
 import env from '../config/env';
 import Hive, { IHive } from '../models/Hive';
-import Sting from '../models/Sting';
+import Sting, { ISting } from '../models/Sting';
 import { deleteStingImages } from './storage.service';
 import { coordinatesToGeoPoint } from '../utils/geo';
 import { toPublicHive } from '../utils/sting.mapper';
+import { refreshHiveFromStings } from './clustering.service';
+import { recordEchoForExpiredSting } from './echoes.service';
+import User from '../models/User';
+import { PublicContributor } from '../types/growth';
 
 let changeStreamsActive = false;
 let periodicCleanupTimer: ReturnType<typeof setInterval> | null = null;
@@ -18,38 +22,70 @@ export function areChangeStreamsActive(): boolean {
   return changeStreamsActive;
 }
 
-/** Синхронизирует счётчик улья с фактическими активными жалами. Возвращает null, если улей распущен. */
+async function hiveWithContributors(hive: IHive) {
+  const now = new Date();
+  const stings = await Sting.find({
+    hiveId: hive._id,
+    expiresAt: { $gt: now },
+    mediaPurgedAt: null,
+  })
+    .sort({ createdAt: -1 })
+    .select('authorId');
+
+  const authorIds: string[] = [];
+  for (const sting of stings) {
+    const id = String(sting.authorId);
+    if (!authorIds.includes(id)) {
+      authorIds.push(id);
+    }
+  }
+  const users = await User.find({ _id: { $in: authorIds.slice(0, 5) } }).select('username avatarUrl');
+  const authors = new Map(users.map((user) => [user.id, user]));
+  const topContributors: PublicContributor[] = authorIds.slice(0, 5).map((authorId) => {
+    const author = authors.get(authorId);
+    return {
+      userId: authorId,
+      username: author?.username ?? 'User',
+      avatarUrl: author?.avatarUrl ?? null,
+    };
+  });
+  return toPublicHive(hive, topContributors);
+}
+
 export async function syncHiveDocument(
   hive: IHive,
   now: Date = new Date(),
 ): Promise<IHive | null> {
-  const activeCount = await Sting.countDocuments({
+  const activeStings = await Sting.find({
     hiveId: hive._id,
     expiresAt: { $gt: now },
-  });
+    mediaPurgedAt: null,
+  }).select('_id');
 
-  if (activeCount === 0) {
+  if (activeStings.length <= 1) {
     const center = coordinatesToGeoPoint(hive.center.coordinates);
+    if (activeStings.length === 1) {
+      await Sting.updateMany(
+        { hiveId: hive._id, expiresAt: { $gt: now } },
+        { $set: { hiveId: null } },
+      );
+    }
     await hive.deleteOne();
     emitHiveDissolved(String(hive._id), center.lat, center.lng);
     return null;
   }
 
-  if (activeCount < env.hiveActivationThreshold) {
-    const center = coordinatesToGeoPoint(hive.center.coordinates);
-    await Sting.updateMany(
-      { hiveId: hive._id, expiresAt: { $gt: now } },
-      { $set: { hiveId: null } },
-    );
-    await hive.deleteOne();
-    emitHiveDissolved(String(hive._id), center.lat, center.lng);
-    return null;
-  }
+  const previousStage = hive.stage;
+  const previousCount = hive.activeStingsCount;
+  const previousActivation = hive.activationCount;
+  await refreshHiveFromStings(hive, now);
 
-  if (hive.activeStingsCount !== activeCount) {
-    hive.activeStingsCount = activeCount;
-    await hive.save();
-    emitHiveUpdated(toPublicHive(hive));
+  if (
+    hive.stage !== previousStage ||
+    hive.activeStingsCount !== previousCount ||
+    hive.activationCount !== previousActivation
+  ) {
+    emitHiveUpdated(await hiveWithContributors(hive));
   }
 
   return hive;
@@ -83,33 +119,43 @@ export async function notifyStingRemoved(
     return;
   }
 
-  const hiveBefore = await Hive.findById(hiveId);
-  if (!hiveBefore) {
-    return;
-  }
-
-  const center = coordinatesToGeoPoint(hiveBefore.center.coordinates);
-  const outcome = await handleStingRemoved(hiveId);
-
-  if (outcome === 'dissolved') {
-    emitHiveDissolved(String(hiveId), center.lat, center.lng);
-    return;
-  }
-
-  if (outcome === 'updated') {
-    const hive = await Hive.findById(hiveId);
-    if (hive) {
-      emitHiveUpdated(toPublicHive(hive));
-    }
-  }
+  await handleStingRemoved(hiveId);
 }
 
-/** Пересчитывает activeStingsCount по фактическим жала́м. */
+async function purgeExpiredSting(sting: ISting, now: Date): Promise<void> {
+  if (sting.expiresAt <= now) {
+    await recordEchoForExpiredSting(sting);
+  }
+
+  if (sting.imageUrl && sting.thumbnailUrl) {
+    await deleteStingImages(sting.imageUrl, sting.thumbnailUrl);
+  }
+
+  const [lng, lat] = sting.location.coordinates;
+  sting.mediaPurgedAt = now;
+  sting.imageUrl = '';
+  sting.thumbnailUrl = '';
+  await sting.save();
+
+  await notifyStingRemoved(sting.id, sting.hiveId, lat, lng);
+}
+
 export async function reconcileHives(): Promise<void> {
   const now = new Date();
   const hives = await Hive.find();
-
   await Promise.all(hives.map((hive) => syncHiveDocument(hive, now)));
+}
+
+async function cleanupExpiredStings(): Promise<void> {
+  const now = new Date();
+  const expiredStings = await Sting.find({
+    expiresAt: { $lte: now },
+    mediaPurgedAt: null,
+  }).limit(200);
+
+  for (const sting of expiredStings) {
+    await purgeExpiredSting(sting, now);
+  }
 }
 
 async function enablePreImages(): Promise<void> {
@@ -140,36 +186,20 @@ async function isReplicaSetAvailable(): Promise<boolean> {
   }
 }
 
-/** Удаляет файлы истёкших жал из storage (fallback без Change Streams). */
-async function cleanupExpiredStingFiles(): Promise<void> {
-  const now = new Date();
-  const expiredStings = await Sting.find({ expiresAt: { $lte: now } })
-    .select('imageUrl thumbnailUrl')
-    .limit(200);
-
-  if (expiredStings.length === 0) {
-    return;
-  }
-
-  await Promise.all(
-    expiredStings.map((sting) => deleteStingImages(sting.imageUrl, sting.thumbnailUrl)),
-  );
-}
-
 function startPeriodicHiveCleanup(): void {
   if (periodicCleanupTimer) {
     return;
   }
 
   void reconcileHives();
-  void cleanupExpiredStingFiles();
+  void cleanupExpiredStings();
 
   periodicCleanupTimer = setInterval(() => {
     void reconcileHives().catch((err: Error) => {
       console.warn('Ошибка периодической очистки ульев:', err.message);
     });
-    void cleanupExpiredStingFiles().catch((err: Error) => {
-      console.warn('Ошибка очистки файлов истёкших жал:', err.message);
+    void cleanupExpiredStings().catch((err: Error) => {
+      console.warn('Ошибка очистки истёкших жал:', err.message);
     });
   }, env.hiveCleanupIntervalMs);
 

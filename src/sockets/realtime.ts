@@ -4,8 +4,9 @@ import { Server, Socket } from 'socket.io';
 import env from '../config/env';
 import User from '../models/User';
 import { BboxQuery, PublicHive, PublicSting } from '../types/sting';
+import { PublicCampaign } from '../types/growth';
 import { RealtimeEnvelope, RealtimeEventType } from '../types/realtime';
-import { pointInBbox } from '../utils/geo';
+import { haversineDistanceM, pointInBbox } from '../utils/geo';
 
 const socketRegions = new Map<string, BboxQuery | null>();
 
@@ -72,6 +73,53 @@ export function emitStingReaction(stingId: string, reactionsCount: number, lat: 
   broadcastToPoint(lat, lng, {
     type: 'sting:reaction',
     payload: { stingId, reactionsCount },
+  });
+}
+
+function broadcastToRadius(lat: number, lng: number, radiusM: number, envelope: RealtimeEnvelope): void {
+  if (!io) {
+    return;
+  }
+
+  for (const [socketId, bbox] of socketRegions) {
+    if (!bbox) {
+      continue;
+    }
+    const inBox = pointInBbox(lat, lng, bbox);
+    const center = {
+      lat: (bbox.swLat + bbox.neLat) / 2,
+      lng: (bbox.swLng + bbox.neLng) / 2,
+    };
+    const near =
+      haversineDistanceM(center, { lat, lng }) <=
+      radiusM + haversineDistanceM(center, { lat: bbox.neLat, lng: bbox.neLng });
+    if (inBox || near) {
+      emitEnvelope(socketId, envelope);
+    }
+  }
+}
+
+export function emitCampaignStarted(
+  campaign: PublicCampaign,
+  lat: number,
+  lng: number,
+  radiusM: number,
+): void {
+  broadcastToRadius(lat, lng, radiusM, {
+    type: 'campaign:started',
+    payload: { campaign },
+  });
+}
+
+export function emitCampaignEnded(
+  campaignId: string,
+  lat: number,
+  lng: number,
+  radiusM: number,
+): void {
+  broadcastToRadius(lat, lng, radiusM, {
+    type: 'campaign:ended',
+    payload: { campaignId },
   });
 }
 

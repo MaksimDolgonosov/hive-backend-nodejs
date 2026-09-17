@@ -1,7 +1,44 @@
 import env from '../config/env';
-import Hive from '../models/Hive';
+import Hive, { IHive } from '../models/Hive';
 import Sting, { ISting } from '../models/Sting';
 import { GeoPoint } from '../types/sting';
+import { computeHiveActivation, HiveStage, isHiveCluster } from '../utils/activation';
+
+export interface HiveAssignmentResult {
+  sting: ISting;
+  hive: IHive | null;
+  previousStage: HiveStage | null;
+  ignited: boolean;
+}
+
+function statsFromStings(stings: ISting[]) {
+  return computeHiveActivation(
+    stings.map((item) => String(item.authorId)),
+    {
+      authorWeightCap: env.hiveAuthorWeightCap,
+      activationThreshold: env.hiveActivationThreshold,
+    },
+  );
+}
+
+export async function refreshHiveFromStings(hive: IHive, now: Date = new Date()): Promise<IHive> {
+  const stings = await Sting.find({
+    hiveId: hive._id,
+    expiresAt: { $gt: now },
+    mediaPurgedAt: null,
+  });
+
+  const stats = statsFromStings(stings);
+  hive.activeStingsCount = stats.activeStingsCount;
+  hive.activationCount = stats.activationCount;
+  hive.contributorsCount = stats.contributorsCount;
+  hive.stage = stats.stage;
+  if (stats.stage === 'hive' && !hive.ignitedAt) {
+    hive.ignitedAt = now;
+  }
+  await hive.save();
+  return hive;
+}
 
 function computeCentroid(points: GeoPoint[]): [number, number] {
   const total = points.reduce(
@@ -11,7 +48,7 @@ function computeCentroid(points: GeoPoint[]): [number, number] {
   return [total.lng / points.length, total.lat / points.length];
 }
 
-export async function assignStingToHive(sting: ISting): Promise<ISting> {
+export async function assignStingToHive(sting: ISting): Promise<HiveAssignmentResult> {
   const [lng, lat] = sting.location.coordinates;
   const now = new Date();
 
@@ -25,23 +62,23 @@ export async function assignStingToHive(sting: ISting): Promise<ISting> {
   });
 
   if (existingHive) {
-    const newCount = existingHive.activeStingsCount + 1;
-
-    if (newCount < env.hiveActivationThreshold) {
-      return sting;
-    }
-
+    const previousStage = existingHive.stage;
     sting.hiveId = existingHive._id;
     await sting.save();
-    existingHive.activeStingsCount += 1;
-    await existingHive.save();
-    return sting;
+    const hive = await refreshHiveFromStings(existingHive, now);
+    return {
+      sting,
+      hive,
+      previousStage,
+      ignited: previousStage === 'seed' && hive.stage === 'hive',
+    };
   }
 
   const nearbyOrphans = await Sting.find({
     _id: { $ne: sting._id },
     hiveId: null,
     expiresAt: { $gt: now },
+    mediaPurgedAt: null,
     location: {
       $near: {
         $geometry: { type: 'Point', coordinates: [lng, lat] },
@@ -50,30 +87,42 @@ export async function assignStingToHive(sting: ISting): Promise<ISting> {
     },
   });
 
-  const totalCount = nearbyOrphans.length + 1;
+  const clusterStings = [...nearbyOrphans, sting];
+  const stats = statsFromStings(clusterStings);
 
-  if (totalCount < env.hiveActivationThreshold) {
-    return sting;
+  if (!isHiveCluster(stats)) {
+    return { sting, hive: null, previousStage: null, ignited: false };
   }
 
-  const points: GeoPoint[] = [
-    { lat, lng },
-    ...nearbyOrphans.map((item) => ({
-      lat: item.location.coordinates[1],
-      lng: item.location.coordinates[0],
-    })),
-  ];
+  const points: GeoPoint[] = clusterStings.map((item) => ({
+    lat: item.location.coordinates[1],
+    lng: item.location.coordinates[0],
+  }));
   const [centroidLng, centroidLat] = computeCentroid(points);
 
   const hive = await Hive.create({
     center: { type: 'Point', coordinates: [centroidLng, centroidLat] },
     radiusM: env.hiveRadiusM,
-    activeStingsCount: totalCount,
+    activeStingsCount: stats.activeStingsCount,
+    activationCount: stats.activationCount,
+    contributorsCount: stats.contributorsCount,
+    stage: stats.stage,
+    founderUserId: sting.authorId,
+    ignitedAt: stats.stage === 'hive' ? now : null,
   });
 
-  const stingIds = [...nearbyOrphans.map((item) => item._id), sting._id];
-  await Sting.updateMany({ _id: { $in: stingIds } }, { $set: { hiveId: hive._id } });
+  await Sting.updateMany(
+    { _id: { $in: clusterStings.map((item) => item._id) } },
+    { $set: { hiveId: hive._id } },
+  );
 
   sting.hiveId = hive._id;
-  return sting;
+  return {
+    sting,
+    hive,
+    previousStage: null,
+    ignited: stats.stage === 'hive',
+  };
 }
+
+export { statsFromStings };

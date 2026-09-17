@@ -1,6 +1,11 @@
 import { NextFunction, Request, Response } from 'express';
 import * as stingsService from '../services/stings.service';
 import { AppError } from '../utils/AppError';
+import { NEARBY_DEFAULT_MAX_RADIUS_M } from '../utils/bbox';
+
+function parseBool(value: unknown): boolean {
+  return value === true || value === 'true' || value === '1';
+}
 
 export async function nearby(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -12,6 +17,26 @@ export async function nearby(req: Request, res: Response, next: NextFunction): P
         neLng: Number(req.query.neLng),
       },
       req.user!.id,
+      {
+        includeEchoes: parseBool(req.query.includeEchoes),
+        includeSeeds: parseBool(req.query.includeSeeds),
+        minResults: req.query.minResults != null ? Number(req.query.minResults) : 0,
+        maxRadiusM:
+          req.query.maxRadiusM != null ? Number(req.query.maxRadiusM) : NEARBY_DEFAULT_MAX_RADIUS_M,
+      },
+    );
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function nearest(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const result = await stingsService.findNearest(
+      Number(req.query.lat),
+      Number(req.query.lng),
+      req.query.limit != null ? Number(req.query.limit) : 1,
     );
     res.status(200).json(result);
   } catch (err) {

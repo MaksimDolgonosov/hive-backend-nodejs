@@ -8,6 +8,8 @@ export type ServerEventType =
   | 'hive:updated'
   | 'hive:dissolved'
   | 'sting:reaction'
+  | 'campaign:started'
+  | 'campaign:ended'
   | 'pong';
 
 export type RealtimeEventType = ClientEventType | ServerEventType;

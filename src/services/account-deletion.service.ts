@@ -1,5 +1,7 @@
 import { Types } from 'mongoose';
 
+import Device from '../models/Device';
+import Invite from '../models/Invite';
 import EmailOtpChallenge from '../models/EmailOtpChallenge';
 import RefreshToken from '../models/RefreshToken';
 import Sting from '../models/Sting';
@@ -81,7 +83,9 @@ export async function deleteAccount(userId: string): Promise<void> {
     await Promise.all(hiveIds.map((hiveId) => handleStingRemoved(new Types.ObjectId(hiveId))));
   }
 
-  await RefreshToken.deleteMany({ userId });
+    await Invite.deleteMany({ ownerId: userId });
+    await Device.deleteMany({ userId });
+    await RefreshToken.deleteMany({ userId });
   await EmailOtpChallenge.deleteMany({ email: user.email });
   await user.deleteOne();
 }

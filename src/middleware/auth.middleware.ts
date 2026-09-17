@@ -24,7 +24,13 @@ async function requireAuth(req: Request, _res: Response, next: NextFunction): Pr
       throw new AppError(403, 'ACCOUNT_DISABLED', 'Аккаунт заблокирован');
     }
 
-    req.user = { id: user.id, email: user.email, username: user.username };
+    req.user = {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      role: user.role ?? 'user',
+      accountType: user.accountType ?? 'personal',
+    };
     next();
   } catch (err) {
     if (err instanceof AppError) {

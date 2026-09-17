@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import ms from 'ms';
 import env from '../config/env';
 import RefreshToken from '../models/RefreshToken';
-import User, { IUser } from '../models/User';
+import User, { AccountType, IUser } from '../models/User';
 import { processAvatar } from './image.service';
 import { uploadAvatarImage, deleteAvatarImage } from './storage.service';
 import { AppError } from '../utils/AppError';
@@ -14,6 +14,8 @@ import { EmailLocale, normalizeEmail } from '../utils/otp';
 import { verifyGoogleIdToken } from './google-auth.service';
 import { consumeValidOtp, issueOtpChallenge, OtpDispatchResult } from './otp.service';
 import { deleteAccount as purgeAccount } from './account-deletion.service';
+import { consumeInviteCode } from './invites.service';
+import { getOrCreateZone } from './zones.service';
 import { OtpPurpose } from '../models/EmailOtpChallenge';
 
 const BCRYPT_ROUNDS = 12;
@@ -37,6 +39,9 @@ export interface RegisterInput {
   email: string;
   password: string;
   username: string;
+  inviteCode?: string;
+  lat?: number;
+  lng?: number;
 }
 
 export interface LoginInput {
@@ -46,11 +51,16 @@ export interface LoginInput {
 
 export interface GoogleLoginInput {
   idToken: string;
+  inviteCode?: string;
+  lat?: number;
+  lng?: number;
 }
 
 export interface AuthorSummary {
   username: string;
   avatarUrl: string | null;
+  accountType: AccountType;
+  allowSharing: boolean;
 }
 
 function hashToken(token: string): string {
@@ -133,10 +143,10 @@ async function findOrCreateGoogleUser(payload: {
   email: string;
   name: string | null;
   picture: string | null;
-}): Promise<IUser> {
+}): Promise<{ user: IUser; isNew: boolean }> {
   const byGoogleId = await User.findOne({ googleId: payload.sub });
   if (byGoogleId) {
-    return byGoogleId;
+    return { user: byGoogleId, isNew: false };
   }
 
   const byEmail = await User.findOne({ email: payload.email });
@@ -156,10 +166,10 @@ async function findOrCreateGoogleUser(payload: {
       byEmail.avatarUrl = payload.picture;
     }
     await byEmail.save();
-    return byEmail;
+    return { user: byEmail, isNew: false };
   }
 
-  return User.create({
+  const user = await User.create({
     email: payload.email,
     username: await ensureUniqueUsername(payload.email, payload.name),
     googleId: payload.sub,
@@ -168,6 +178,7 @@ async function findOrCreateGoogleUser(payload: {
     emailVerified: true,
     status: 'active',
   });
+  return { user, isNew: true };
 }
 
 function isEmailVerified(user: IUser): boolean {
@@ -175,6 +186,17 @@ function isEmailVerified(user: IUser): boolean {
     return false;
   }
   return user.emailVerified !== false;
+}
+
+async function applyGrowthSignupMeta(
+  userId: string,
+  input: { inviteCode?: string; lat?: number; lng?: number },
+): Promise<void> {
+  await consumeInviteCode(input.inviteCode, userId);
+  if (input.lat != null && input.lng != null) {
+    const zone = await getOrCreateZone(input.lat, input.lng);
+    await User.updateOne({ _id: userId, signupZoneId: null }, { $set: { signupZoneId: zone.id } });
+  }
 }
 
 async function assertUsernameAvailable(username: string, exceptUserId?: string): Promise<void> {
@@ -214,6 +236,7 @@ export async function register(
     existingByEmail.status = 'pending';
     existingByEmail.emailVerified = false;
     await existingByEmail.save();
+    await applyGrowthSignupMeta(existingByEmail.id, input);
 
     return issueOtpChallenge({
       email: normalizedEmail,
@@ -234,6 +257,7 @@ export async function register(
     emailVerified: false,
     status: 'pending',
   });
+  await applyGrowthSignupMeta(user.id, input);
 
   return issueOtpChallenge({
     email: normalizedEmail,
@@ -275,9 +299,12 @@ export async function loginWithGoogle(
   input: GoogleLoginInput,
 ): Promise<{ user: PublicUser; tokens: AuthTokens }> {
   const payload = await verifyGoogleIdToken(input.idToken);
-  const user = await findOrCreateGoogleUser(payload);
+  const { user, isNew } = await findOrCreateGoogleUser(payload);
   if (user.status === 'disabled') {
     throw new AppError(403, 'ACCOUNT_DISABLED', 'Аккаунт заблокирован');
+  }
+  if (isNew) {
+    await applyGrowthSignupMeta(user.id, input);
   }
   const tokens = await issueTokens(user.id);
   return { user: toPublicUser(user), tokens };
@@ -499,11 +526,18 @@ export async function loadAuthorSummaries(
     return new Map();
   }
 
-  const users = await User.find({ _id: { $in: userIds } }).select('username avatarUrl');
+  const users = await User.find({ _id: { $in: userIds } }).select(
+    'username avatarUrl accountType settings',
+  );
   return new Map(
     users.map((user) => [
       user.id,
-      { username: user.username, avatarUrl: user.avatarUrl },
+      {
+        username: user.username,
+        avatarUrl: user.avatarUrl,
+        accountType: user.accountType ?? 'personal',
+        allowSharing: user.settings?.allowSharing !== false,
+      },
     ]),
   );
 }
