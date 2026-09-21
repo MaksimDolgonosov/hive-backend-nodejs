@@ -122,20 +122,41 @@ export async function notifyStingRemoved(
   await handleStingRemoved(hiveId);
 }
 
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 async function purgeExpiredSting(sting: ISting, now: Date): Promise<void> {
+  const imageUrl = sting.imageUrl;
+  const thumbnailUrl = sting.thumbnailUrl;
+  const [lng, lat] = sting.location.coordinates;
+
+  const result = await Sting.updateOne(
+    { _id: sting._id, mediaPurgedAt: null },
+    {
+      $set: {
+        mediaPurgedAt: now,
+        imageUrl: '',
+        thumbnailUrl: '',
+      },
+    },
+  );
+
+  if (result.matchedCount === 0) {
+    return;
+  }
+
+  if (imageUrl && thumbnailUrl) {
+    try {
+      await deleteStingImages(imageUrl, thumbnailUrl);
+    } catch (err: unknown) {
+      console.warn(`Не удалось удалить медиа жала ${sting.id}:`, errorMessage(err));
+    }
+  }
+
   if (sting.expiresAt <= now) {
     await recordEchoForExpiredSting(sting);
   }
-
-  if (sting.imageUrl && sting.thumbnailUrl) {
-    await deleteStingImages(sting.imageUrl, sting.thumbnailUrl);
-  }
-
-  const [lng, lat] = sting.location.coordinates;
-  sting.mediaPurgedAt = now;
-  sting.imageUrl = '';
-  sting.thumbnailUrl = '';
-  await sting.save();
 
   await notifyStingRemoved(sting.id, sting.hiveId, lat, lng);
 }
@@ -154,7 +175,11 @@ async function cleanupExpiredStings(): Promise<void> {
   }).limit(200);
 
   for (const sting of expiredStings) {
-    await purgeExpiredSting(sting, now);
+    try {
+      await purgeExpiredSting(sting, now);
+    } catch (err: unknown) {
+      console.warn(`Ошибка очистки истёкшего жала ${sting.id}:`, errorMessage(err));
+    }
   }
 }
 
@@ -191,15 +216,19 @@ function startPeriodicHiveCleanup(): void {
     return;
   }
 
-  void reconcileHives();
-  void cleanupExpiredStings();
+  void reconcileHives().catch((err: unknown) => {
+    console.warn('Ошибка периодической очистки ульев:', errorMessage(err));
+  });
+  void cleanupExpiredStings().catch((err: unknown) => {
+    console.warn('Ошибка очистки истёкших жал:', errorMessage(err));
+  });
 
   periodicCleanupTimer = setInterval(() => {
-    void reconcileHives().catch((err: Error) => {
-      console.warn('Ошибка периодической очистки ульев:', err.message);
+    void reconcileHives().catch((err: unknown) => {
+      console.warn('Ошибка периодической очистки ульев:', errorMessage(err));
     });
-    void cleanupExpiredStings().catch((err: Error) => {
-      console.warn('Ошибка очистки истёкших жал:', err.message);
+    void cleanupExpiredStings().catch((err: unknown) => {
+      console.warn('Ошибка очистки истёкших жал:', errorMessage(err));
     });
   }, env.hiveCleanupIntervalMs);
 

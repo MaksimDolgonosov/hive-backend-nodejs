@@ -25,12 +25,16 @@ export interface ISting extends Document {
   updatedAt: Date;
 }
 
+function mediaStillPresent(this: ISting): boolean {
+  return this.mediaPurgedAt == null;
+}
+
 const stingSchema = new Schema<ISting>(
   {
     authorId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     hiveId: { type: Schema.Types.ObjectId, ref: 'Hive', default: null },
-    imageUrl: { type: String, required: true },
-    thumbnailUrl: { type: String, required: true },
+    imageUrl: { type: String, required: mediaStillPresent },
+    thumbnailUrl: { type: String, required: mediaStillPresent },
     location: {
       type: {
         type: String,
