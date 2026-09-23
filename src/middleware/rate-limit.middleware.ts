@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import env from '../config/env';
+import PartnerApplication from '../models/PartnerApplication';
 
 function tooManyRequestsHandler(code: string, message: string) {
   return (_req: Request, res: Response): void => {
@@ -98,7 +99,26 @@ function userDailyLimit(max: number, message: string) {
   });
 }
 
-export const partnerApplicationCreateRateLimit = userDailyLimit(3, 'Слишком много заявок, попробуйте завтра');
+export const partnerApplicationCreateRateLimit = rateLimit({
+  windowMs: 24 * 60 * 60 * 1000,
+  max: 3,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipFailedRequests: true,
+  keyGenerator: (req: Request): string => req.user!.id,
+  // Повтор «Дальше» обновляет уже открытый draft и не должен съедать 3 создания в сутки.
+  skip: async (req: Request): Promise<boolean> => {
+    if (!req.user?.id) {
+      return false;
+    }
+    const existing = await PartnerApplication.exists({ userId: req.user.id, status: 'draft' });
+    return existing != null;
+  },
+  handler: tooManyRequestsHandler(
+    'APPLICATION_RATE_LIMITED',
+    'Слишком много заявок, попробуйте завтра',
+  ),
+});
 export const partnerSubmitRateLimit = userDailyLimit(10, 'Слишком много отправок, попробуйте завтра');
 export const partnerOnsiteRateLimit = userDailyLimit(10, 'Слишком много проверок на точке, попробуйте завтра');
 export const placeMediaRateLimit = userDailyLimit(20, 'Слишком много фото места, попробуйте завтра');
