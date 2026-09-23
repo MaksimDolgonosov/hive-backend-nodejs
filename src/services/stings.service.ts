@@ -240,6 +240,7 @@ export async function findNearby(
     stings: PublicSting[];
     hives: PublicHive[];
     echoes?: PublicEchoCell[];
+    places?: Awaited<ReturnType<typeof findPlaceSummariesInBbox>>;
     appliedBounds: BboxQuery;
     expanded: boolean;
     appliedRadiusM: number;
