@@ -21,7 +21,7 @@ export const updatePlaceValidator = [
     }
     return true;
   }),
-  body('address.formatted').optional().isString().isLength({ min: 4, max: 200 }),
+  body('address.formatted').optional({ nullable: true, checkFalsy: true }).isString().isLength({ max: 200 }),
   body('address.city').optional({ nullable: true }).isString().isLength({ max: 80 }),
   body('address.country').optional({ nullable: true }).isString().isLength({ max: 80 }),
   body('socialLinks').optional({ nullable: true }).isObject(),
@@ -58,7 +58,7 @@ export const adminPlaceCreateValidator = [
   body('ownerId').isMongoId(),
   body('name').isString().isLength({ min: 2, max: 80 }),
   body('category').isIn(CATEGORIES),
-  body('address.formatted').isString().isLength({ min: 4, max: 200 }),
+  body('address.formatted').optional({ nullable: true, checkFalsy: true }).isString().isLength({ max: 200 }),
   body('address.city').optional({ nullable: true }).isString().isLength({ max: 80 }),
   body('address.country').optional({ nullable: true }).isString().isLength({ max: 80 }),
   body('center.lat').isFloat({ min: -90, max: 90 }),

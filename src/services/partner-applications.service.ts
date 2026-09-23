@@ -123,24 +123,6 @@ function applyPatch(application: IPartnerApplication, input: ApplicationInput): 
     application.address.country = null;
     application.markModified('address');
   }
-  if (
-    input.address?.formatted != null &&
-    input.address.formatted.trim().length > 0 &&
-    !Number.isFinite(input.address.lat)
-  ) {
-    application.address.formatted = input.address.formatted.trim();
-    if (!application.onsite) {
-      application.address.source = 'declared';
-      application.address.lat = null;
-      application.address.lng = null;
-    }
-  }
-  if (input.address && 'city' in input.address) {
-    application.address.city = input.address.city?.trim() ? input.address.city.trim() : null;
-  }
-  if (input.address && 'country' in input.address) {
-    application.address.country = input.address.country?.trim() ? input.address.country.trim() : null;
-  }
   if (input.phone !== undefined) {
     application.phone = input.phone;
   }
@@ -178,16 +160,17 @@ export async function createDraft(userId: string, input: ApplicationInput): Prom
   }
 
   await assertPlaceCapacity(userId);
+  const hasPoint = Number.isFinite(input.address?.lat) && Number.isFinite(input.address?.lng);
   const application = await PartnerApplication.create({
     userId,
     brandName: input.brandName?.trim() ?? '',
     category: input.category ?? 'other',
     address: {
-      formatted: input.address?.formatted?.trim() ?? '',
-      city: input.address?.city?.trim() || null,
-      country: input.address?.country?.trim() || null,
-      lat: Number.isFinite(input.address?.lat) ? input.address!.lat! : null,
-      lng: Number.isFinite(input.address?.lng) ? input.address!.lng! : null,
+      formatted: hasPoint ? '' : (input.address?.formatted?.trim() ?? ''),
+      city: hasPoint ? null : input.address?.city?.trim() || null,
+      country: hasPoint ? null : input.address?.country?.trim() || null,
+      lat: hasPoint ? input.address!.lat! : null,
+      lng: hasPoint ? input.address!.lng! : null,
       source: 'declared',
     },
     phone: input.phone ?? null,

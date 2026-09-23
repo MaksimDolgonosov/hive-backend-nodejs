@@ -204,9 +204,10 @@ export async function adminCreate(req: Request, res: Response, next: NextFunctio
       ownerId: req.body.ownerId,
       name: String(req.body.name).trim(),
       category: req.body.category as PlaceCategory,
-      formatted: String(req.body.address.formatted).trim(),
-      city: req.body.address.city ? String(req.body.address.city).trim() : null,
-      country: req.body.address.country ? String(req.body.address.country).trim() : null,
+      formatted:
+        typeof req.body.address?.formatted === 'string' ? req.body.address.formatted.trim() : '',
+      city: req.body.address?.city ? String(req.body.address.city).trim() : null,
+      country: req.body.address?.country ? String(req.body.address.country).trim() : null,
       lat: Number(req.body.center.lat),
       lng: Number(req.body.center.lng),
       phone: req.body.phone ? normalizePhone(req.body.phone) : null,
