@@ -17,6 +17,8 @@ export const applicationBodyValidator = [
   body('brandName').optional().isString().isLength({ min: 2, max: 80 }),
   body('category').optional().isIn(CATEGORIES),
   body('address.formatted').optional().isString().isLength({ min: 4, max: 200 }),
+  body('address.lat').optional().isFloat({ min: -90, max: 90 }),
+  body('address.lng').optional().isFloat({ min: -180, max: 180 }),
   body('address.city').optional({ nullable: true }).isString().isLength({ max: 80 }),
   body('address.country').optional({ nullable: true }).isString().isLength({ max: 80 }),
   body('phone').optional({ nullable: true }).custom(optionalPhone),
@@ -28,6 +30,12 @@ export const applicationBodyValidator = [
 ];
 
 export const applicationIdValidator = [param('id').isMongoId()];
+
+export const submitApplicationValidator = [
+  param('id').isMongoId(),
+  body('lat').isFloat({ min: -90, max: 90 }),
+  body('lng').isFloat({ min: -180, max: 180 }),
+];
 
 export const onsiteValidator = [
   param('id').isMongoId(),

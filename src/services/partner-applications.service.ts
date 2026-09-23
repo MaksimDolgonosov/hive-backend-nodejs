@@ -10,6 +10,7 @@ import Place from '../models/Place';
 import User from '../models/User';
 import { EMPTY_SOCIAL_LINKS } from '../types/profile-user';
 import { AppError } from '../utils/AppError';
+import { haversineDistanceM } from '../utils/geo';
 import { assertPlacePhotoSize, processPlacePhoto } from './image.service';
 import { validatePhotoModeration } from './moderation.service';
 import { deleteStoredImage, uploadOnsiteProof } from './storage.service';
@@ -25,6 +26,8 @@ export interface ApplicationInput {
     formatted?: string;
     city?: string | null;
     country?: string | null;
+    lat?: number;
+    lng?: number;
   };
   phone?: string | null;
   contactEmail?: string;
@@ -111,7 +114,20 @@ function applyPatch(application: IPartnerApplication, input: ApplicationInput): 
   if (input.category) {
     application.category = input.category;
   }
-  if (input.address?.formatted != null) {
+  if (input.address && Number.isFinite(input.address.lat) && Number.isFinite(input.address.lng)) {
+    application.address.lat = input.address.lat!;
+    application.address.lng = input.address.lng!;
+    application.address.source = 'declared';
+    application.address.formatted = '';
+    application.address.city = null;
+    application.address.country = null;
+    application.markModified('address');
+  }
+  if (
+    input.address?.formatted != null &&
+    input.address.formatted.trim().length > 0 &&
+    !Number.isFinite(input.address.lat)
+  ) {
     application.address.formatted = input.address.formatted.trim();
     if (!application.onsite) {
       application.address.source = 'declared';
@@ -170,8 +186,8 @@ export async function createDraft(userId: string, input: ApplicationInput): Prom
       formatted: input.address?.formatted?.trim() ?? '',
       city: input.address?.city?.trim() || null,
       country: input.address?.country?.trim() || null,
-      lat: null,
-      lng: null,
+      lat: Number.isFinite(input.address?.lat) ? input.address!.lat! : null,
+      lng: Number.isFinite(input.address?.lng) ? input.address!.lng! : null,
       source: 'declared',
     },
     phone: input.phone ?? null,
@@ -262,6 +278,18 @@ export async function saveOnsite(input: {
     await deleteStoredImage(application.onsite.photoUrl);
   }
 
+  const declaredLat = application.address.lat;
+  const declaredLng = application.address.lng;
+  const distanceToAddressM =
+    declaredLat != null && declaredLng != null
+      ? Math.round(
+          haversineDistanceM(
+            { lat: declaredLat, lng: declaredLng },
+            { lat: input.lat, lng: input.lng },
+          ),
+        )
+      : 0;
+
   const verifiedAt = new Date();
   application.onsite = {
     verifiedAt,
@@ -269,7 +297,7 @@ export async function saveOnsite(input: {
     lng: input.lng,
     accuracyM: input.accuracyM,
     photoUrl,
-    distanceToAddressM: 0,
+    distanceToAddressM,
   };
   application.address.lat = input.lat;
   application.address.lng = input.lng;
@@ -286,22 +314,29 @@ function missingFields(application: IPartnerApplication): string[] {
   if (!application.category) {
     missing.push('category');
   }
-  if (application.address.formatted.trim().length < 4) {
-    missing.push('address.formatted');
+  if (application.address.lat == null || application.address.lng == null) {
+    missing.push('address.point');
   }
   if (!application.contactEmail.includes('@')) {
     missing.push('contactEmail');
   }
-  if (!application.onsite) {
-    missing.push('onsite');
-  }
   return missing;
 }
 
-export async function submitApplication(id: string, userId: string): Promise<{ application: PublicApplication; placeId: string }> {
+export async function submitApplication(
+  id: string,
+  userId: string,
+  coords: { lat: number; lng: number },
+): Promise<{ application: PublicApplication; placeId: string }> {
   const application = await requireDraft(id, userId);
+  if (Number.isFinite(coords.lat) && Number.isFinite(coords.lng)) {
+    application.address.lat = coords.lat;
+    application.address.lng = coords.lng;
+    application.address.source = 'declared';
+    application.markModified('address');
+  }
   const missing = missingFields(application);
-  if (missing.length > 0 || !application.onsite) {
+  if (missing.length > 0 || application.address.lat == null || application.address.lng == null) {
     throw new AppError(422, 'APPLICATION_INCOMPLETE', 'Заявка заполнена не до конца', { missing });
   }
 
@@ -310,8 +345,10 @@ export async function submitApplication(id: string, userId: string): Promise<{ a
     throw new AppError(404, 'USER_NOT_FOUND', 'Пользователь не найден');
   }
 
+  const lat = application.address.lat;
+  const lng = application.address.lng;
   await assertPlaceCapacity(userId);
-  await assertNoPlaceOverlap(application.onsite.lat, application.onsite.lng, userId);
+  await assertNoPlaceOverlap(lat, lng, userId);
 
   const place = await Place.create({
     ownerId: user._id,
@@ -323,14 +360,14 @@ export async function submitApplication(id: string, userId: string): Promise<{ a
       formatted: application.address.formatted.trim(),
       city: application.address.city,
       country: application.address.country,
-      lat: application.onsite.lat,
-      lng: application.onsite.lng,
-      source: 'onsite',
+      lat,
+      lng,
+      source: 'declared',
     },
     phone: application.phone,
     center: {
       type: 'Point',
-      coordinates: [application.onsite.lng, application.onsite.lat],
+      coordinates: [lng, lat],
     },
     radiusM: env.placeRadiusM,
     socialLinks: {

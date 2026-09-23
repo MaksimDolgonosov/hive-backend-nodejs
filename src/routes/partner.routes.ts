@@ -13,6 +13,7 @@ import {
   applicationBodyValidator,
   applicationIdValidator,
   onsiteValidator,
+  submitApplicationValidator,
 } from '../validators/partner.validators';
 
 const router = Router();
@@ -47,7 +48,7 @@ router.post(
   '/:id/submit',
   requireAuth,
   partnerSubmitRateLimit,
-  applicationIdValidator,
+  submitApplicationValidator,
   handleValidation,
   partnerController.submit,
 );

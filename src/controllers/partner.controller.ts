@@ -30,6 +30,8 @@ function readApplicationBody(body: Request['body']) {
           formatted: typeof address.formatted === 'string' ? address.formatted : undefined,
           city: 'city' in address ? nullableString(address.city) : undefined,
           country: 'country' in address ? nullableString(address.country) : undefined,
+          lat: typeof address.lat === 'number' ? address.lat : undefined,
+          lng: typeof address.lng === 'number' ? address.lng : undefined,
         }
       : undefined,
     phone: 'phone' in body ? normalizePhone(body.phone) : undefined,
@@ -98,7 +100,10 @@ export async function onsite(req: Request, res: Response, next: NextFunction): P
 
 export async function submit(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const result = await partnerService.submitApplication(req.params.id, req.user!.id);
+    const result = await partnerService.submitApplication(req.params.id, req.user!.id, {
+      lat: Number(req.body.lat),
+      lng: Number(req.body.lng),
+    });
     res.status(200).json(result);
   } catch (error) {
     next(error);
