@@ -1,3 +1,4 @@
+import { PlaceCategory } from '../models/PartnerApplication';
 import { AccountType } from '../models/User';
 import { HiveStage } from '../utils/activation';
 import { PublicContributor } from './growth';
@@ -41,7 +42,7 @@ export interface PublicHive {
   place?: {
     id: string;
     name: string;
-    category: string;
+    category: PlaceCategory;
     center: GeoPoint;
     radiusM: number;
     coverThumbnailUrl: string | null;
