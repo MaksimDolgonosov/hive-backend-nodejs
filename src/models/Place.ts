@@ -48,7 +48,7 @@ const placeSchema = new Schema<IPlace>(
     category: { type: String, enum: ['cafe', 'bar', 'restaurant', 'other'], required: true },
     description: { type: String, default: null, maxlength: 280 },
     address: {
-      formatted: { type: String, required: true },
+      formatted: { type: String, default: '' },
       city: { type: String, default: null },
       country: { type: String, default: null },
       lat: { type: Number, default: null },
