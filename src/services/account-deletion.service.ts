@@ -11,6 +11,8 @@ import { emitStingExpired } from '../sockets/realtime';
 import { AppError } from '../utils/AppError';
 import { areChangeStreamsActive, handleStingRemoved } from './hive-cleanup.service';
 import { deleteAvatarImage, deleteStingImages } from './storage.service';
+import { anonymizeApplications } from './partner-applications.service';
+import { refreshPlaceGuestCount, suspendPlacesOnAccountDeletion } from './places.service';
 
 async function deleteOwnedStingMedia(
   stings: Array<{ imageUrl: string; thumbnailUrl: string }>,
@@ -47,7 +49,7 @@ export async function deleteAccount(userId: string): Promise<void> {
   }
 
   const stings = await Sting.find({ authorId: userId }).select(
-    '_id hiveId imageUrl thumbnailUrl location',
+    '_id hiveId placeId imageUrl thumbnailUrl location',
   );
   const ownedStingIds = stings.map((sting) => sting._id);
   const hiveIds = [
@@ -73,6 +75,18 @@ export async function deleteAccount(userId: string): Promise<void> {
     await StingReaction.deleteMany({ stingId: { $in: ownedStingIds } });
   }
   await Sting.deleteMany({ authorId: userId });
+
+  const placeIds = [
+    ...new Set(
+      stings
+        .map((sting) => sting.placeId)
+        .filter((placeId): placeId is NonNullable<typeof placeId> => placeId != null)
+        .map((placeId) => String(placeId)),
+    ),
+  ];
+  await Promise.all(placeIds.map((placeId) => refreshPlaceGuestCount(new Types.ObjectId(placeId))));
+  await suspendPlacesOnAccountDeletion(userId);
+  await anonymizeApplications(userId);
 
   if (!areChangeStreamsActive()) {
     for (const sting of stings) {

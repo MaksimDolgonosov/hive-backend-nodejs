@@ -13,6 +13,7 @@ export interface IHive extends Document {
   contributorsCount: number;
   stage: HiveStage;
   founderUserId: Types.ObjectId | null;
+  placeId: Types.ObjectId | null;
   ignitedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -37,6 +38,7 @@ const hiveSchema = new Schema<IHive>(
     contributorsCount: { type: Number, default: 0 },
     stage: { type: String, enum: ['seed', 'hive'], default: 'seed' },
     founderUserId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    placeId: { type: Schema.Types.ObjectId, ref: 'Place', default: null },
     ignitedAt: { type: Date, default: null },
   },
   { timestamps: true },

@@ -3,6 +3,7 @@ import Sting from '../models/Sting';
 import { PublicHive, PublicSting } from '../types/sting';
 import { AppError } from '../utils/AppError';
 import { mapPublicStings, toPublicHive } from '../utils/sting.mapper';
+import { attachPlaceSummaries } from './places.service';
 import { getLikedStingIds } from './reactions.service';
 import { syncHiveDocument } from './hive-cleanup.service';
 
@@ -20,7 +21,8 @@ async function requireActiveHive(id: string): Promise<PublicHive> {
     throw new AppError(404, 'HIVE_NOT_FOUND', 'Улей не найден или растворился');
   }
 
-  return toPublicHive(synced);
+  const [publicHive] = await attachPlaceSummaries([synced.placeId], [toPublicHive(synced)]);
+  return publicHive;
 }
 
 export async function getHiveById(

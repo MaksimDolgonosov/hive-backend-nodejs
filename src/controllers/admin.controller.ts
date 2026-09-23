@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from 'express';
 import User from '../models/User';
 import * as analyticsService from '../services/analytics.service';
 import * as campaignsService from '../services/campaigns.service';
+import { suspendLivePlaces } from '../services/places.service';
 import { AppError } from '../utils/AppError';
 
 export async function createCampaign(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -32,6 +33,9 @@ export async function setAccountType(req: Request, res: Response, next: NextFunc
     );
     if (!user) {
       throw new AppError(404, 'USER_NOT_FOUND', 'Пользователь не найден');
+    }
+    if (user.accountType === 'personal') {
+      await suspendLivePlaces(user.id);
     }
     res.status(200).json({ id: user.id, accountType: user.accountType });
   } catch (err) {

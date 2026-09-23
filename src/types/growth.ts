@@ -39,6 +39,7 @@ export interface PublicEchoCell {
 export interface NearbyQueryOptions {
   includeEchoes: boolean;
   includeSeeds: boolean;
+  includePlaces: boolean;
   minResults: number;
   maxRadiusM: number;
 }

@@ -23,6 +23,7 @@ export interface PublicSting {
   comment: string | null;
   shareUrl: string | null;
   hasLiked?: boolean;
+  placeId?: string | null;
 }
 
 export interface PublicHive {
@@ -36,6 +37,19 @@ export interface PublicHive {
   topContributors: PublicContributor[];
   createdAt: string;
   updatedAt: string;
+  placeId?: string | null;
+  place?: {
+    id: string;
+    name: string;
+    category: string;
+    center: GeoPoint;
+    radiusM: number;
+    coverThumbnailUrl: string | null;
+    hiveId: string | null;
+    hiveStage: HiveStage | null;
+    activeGuestStingsCount: number;
+    status: 'live';
+  } | null;
 }
 
 export interface BboxQuery {

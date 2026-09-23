@@ -9,3 +9,12 @@ export async function sting(req: Request, res: Response, next: NextFunction): Pr
     next(err);
   }
 }
+
+export async function place(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const result = await shareService.renderPlaceSharePage(req.params.id);
+    res.status(result.status).type('html').send(result.html);
+  } catch (err) {
+    next(err);
+  }
+}

@@ -7,6 +7,7 @@ export const nearbyValidator = [
   query('neLng').isFloat({ min: -180, max: 180 }).withMessage('neLng должен быть от -180 до 180'),
   query('includeEchoes').optional().isBoolean().withMessage('includeEchoes должен быть boolean'),
   query('includeSeeds').optional().isBoolean().withMessage('includeSeeds должен быть boolean'),
+  query('includePlaces').optional().isBoolean().withMessage('includePlaces должен быть boolean'),
   query('minResults').optional().isInt({ min: 0, max: 50 }).withMessage('minResults должен быть от 0 до 50'),
   query('maxRadiusM').optional().isInt({ min: 1, max: 200000 }).withMessage('maxRadiusM слишком большой'),
 ];

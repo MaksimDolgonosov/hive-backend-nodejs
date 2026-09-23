@@ -1,6 +1,7 @@
 import env from '../config/env';
 import { recalculateActiveZones, recalculateIdleZones } from './zones.service';
 import { tickCampaigns } from './campaigns.service';
+import { purgeDueOnsiteProofs } from './partner-applications.service';
 import {
   enqueueExpiringStingPushes,
   flushPushQueue,
@@ -26,6 +27,9 @@ export function startGrowthWorkers(): void {
   idleTimer = setInterval(() => {
     void recalculateIdleZones().catch((error: Error) => {
       console.warn('[zones] idle recalc failed', error.message);
+    });
+    void purgeDueOnsiteProofs().catch((error: Error) => {
+      console.warn('[places] onsite purge failed', error.message);
     });
   }, env.zoneRecalcIdleMs);
 

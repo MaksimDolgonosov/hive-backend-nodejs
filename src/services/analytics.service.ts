@@ -1,5 +1,6 @@
-import env from '../config/env';
+import { cellToBoundary, isValidCell } from 'h3-js';
 import AnalyticsEvent from '../models/AnalyticsEvent';
+import Place from '../models/Place';
 import Sting from '../models/Sting';
 import User from '../models/User';
 import { Types } from 'mongoose';
@@ -25,6 +26,17 @@ const KNOWN_EVENTS = new Set([
   'push_opened',
   'campaign_banner_shown',
   'waitlist_submitted',
+  'seed_marker_tap',
+  'partner_apply_started',
+  'partner_onsite_succeeded',
+  'partner_application_submitted',
+  'place_cover_uploaded',
+  'place_gallery_uploaded',
+  'place_went_live',
+  'place_card_opened',
+  'place_deeplink_opened',
+  'place_report_submitted',
+  'place_seed_cta_tap',
 ]);
 
 export async function ingestEvents(input: {
@@ -78,6 +90,64 @@ export async function ingestEvents(input: {
     })),
     { ordered: false },
   );
+}
+
+async function placeMetricsForZone(zoneId: string, to: Date): Promise<{
+  placeLiveCount: number | null;
+  placeGuestStings24h: number | null;
+  placeWithHiveShare: number | null;
+}> {
+  if (!isValidCell(zoneId)) {
+    return { placeLiveCount: null, placeGuestStings24h: null, placeWithHiveShare: null };
+  }
+
+  const boundary = cellToBoundary(zoneId);
+  const ring = boundary.map(([lat, lng]) => [lng, lat]);
+  if (ring.length > 0) {
+    ring.push(ring[0]!);
+  }
+
+  const places = await Place.find({
+    status: 'live',
+    center: {
+      $geoWithin: {
+        $geometry: { type: 'Polygon', coordinates: [ring] },
+      },
+    },
+  }).select('_id hiveStage');
+
+  const since = new Date(to.getTime() - 24 * 60 * 60 * 1000);
+  const placeIds = places.map((place) => place._id);
+  const guestStings =
+    placeIds.length === 0
+      ? []
+      : await Sting.aggregate<{ count: number }>([
+          {
+            $match: {
+              placeId: { $in: placeIds },
+              createdAt: { $gte: since, $lte: to },
+              mediaPurgedAt: null,
+            },
+          },
+          {
+            $lookup: {
+              from: 'users',
+              localField: 'authorId',
+              foreignField: '_id',
+              as: 'author',
+            },
+          },
+          { $unwind: '$author' },
+          { $match: { 'author.accountType': 'personal' } },
+          { $count: 'count' },
+        ]);
+
+  const withHive = places.filter((place) => place.hiveStage === 'hive').length;
+  return {
+    placeLiveCount: places.length,
+    placeGuestStings24h: guestStings[0]?.count ?? 0,
+    placeWithHiveShare: places.length === 0 ? null : withHive / places.length,
+  };
 }
 
 function median(values: number[]): number | null {
@@ -143,6 +213,8 @@ export async function getDensityMetrics(input: {
     { $count: 'count' },
   ]);
 
+  const placeMetrics = await placeMetricsForZone(input.zoneId, input.to);
+
   const result = {
     zoneId: input.zoneId,
     from: input.from.toISOString(),
@@ -155,6 +227,7 @@ export async function getDensityMetrics(input: {
       posts: organicPosts[0]?.count ?? 0,
       postsPerActiveUser: userIds.size === 0 ? null : (organicPosts[0]?.count ?? 0) / userIds.size,
     },
+    ...placeMetrics,
   };
 
   metricsCache.set(cacheKey, result);

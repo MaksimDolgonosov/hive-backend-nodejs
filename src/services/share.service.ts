@@ -120,3 +120,36 @@ export async function renderStingSharePage(id: string): Promise<{ status: number
   htmlCache.set(id, html);
   return { status: 200, html };
 }
+
+export async function renderPlaceSharePage(id: string): Promise<{ status: number; html: string }> {
+  const cacheKey = `place:${id}`;
+  const cached = htmlCache.get(cacheKey);
+  if (cached) {
+    return { status: cached.startsWith('<!--404') ? 404 : 200, html: cached.replace(/^<!--404-->/, '') };
+  }
+
+  const { default: Place } = await import('../models/Place');
+  const { default: PlaceMedia } = await import('../models/PlaceMedia');
+  const place = await Place.findById(id);
+  if (!place || place.status !== 'live' || !place.coverThumbnailUrl) {
+    const html = `<!--404-->${notFoundPage()}`;
+    htmlCache.set(cacheKey, html);
+    return { status: 404, html: notFoundPage() };
+  }
+
+  const cover = place.coverMediaId ? await PlaceMedia.findById(place.coverMediaId) : null;
+  const image = cover?.imageUrl ?? place.coverThumbnailUrl;
+  const url = `${env.publicAppUrl.replace(/\/$/, '')}/share/places/${id}`;
+  const html = layout({
+    title: `${place.name} — Hive`,
+    description: place.address.formatted || place.name,
+    image,
+    url,
+    body: `<img src="${escapeHtml(image)}" alt="">
+      <h1>${escapeHtml(place.name)}</h1>
+      <p>${escapeHtml(place.address.formatted)}</p>
+      <p><a class="btn" href="hiveapp://place/${id}">Открыть в Hive</a></p>`,
+  });
+  htmlCache.set(cacheKey, html);
+  return { status: 200, html };
+}

@@ -30,6 +30,7 @@ import {
 import { bboxToGeoBox, coordinatesToGeoPoint } from '../utils/geo';
 import { echoCellIdFromLatLng, overviewCellIdFromZone, zoneIdFromLatLng } from '../utils/h3';
 import { mapPublicStings, toPublicHive } from '../utils/sting.mapper';
+import { attachPlaceSummaries, findContainingLivePlace, findPlaceSummariesInBbox, refreshPlaceGuestCount, syncHivePlace } from './places.service';
 import {
   combineTtlSec,
   expiresAtFromTtl,
@@ -109,7 +110,11 @@ async function loadTopContributors(hiveIds: string[]): Promise<Map<string, Publi
 
 async function mapHives(hives: IHive[]): Promise<PublicHive[]> {
   const contributors = await loadTopContributors(hives.map((hive) => hive.id));
-  return hives.map((hive) => toPublicHive(hive, contributors.get(hive.id) ?? []));
+  const publics = hives.map((hive) => toPublicHive(hive, contributors.get(hive.id) ?? []));
+  return attachPlaceSummaries(
+    hives.map((hive) => hive.placeId),
+    publics,
+  );
 }
 
 async function emitCreateEvents(
@@ -187,6 +192,7 @@ export async function findNearby(
   stings: PublicSting[];
   hives: PublicHive[];
   echoes?: PublicEchoCell[];
+  places?: Awaited<ReturnType<typeof findPlaceSummariesInBbox>>;
   appliedBounds: BboxQuery;
   expanded: boolean;
   appliedRadiusM: number;
@@ -249,6 +255,10 @@ export async function findNearby(
 
   if (options.includeEchoes) {
     payload.echoes = await findEchoesInBbox(applied);
+  }
+
+  if (options.includePlaces) {
+    payload.places = await findPlaceSummariesInBbox(applied);
   }
 
   return payload;
@@ -384,6 +394,15 @@ export async function createSting(input: CreateStingInput): Promise<{
   });
 
   const clustered = await assignStingToHive(sting);
+  const place = await findContainingLivePlace(input.lat, input.lng);
+  if (place) {
+    clustered.sting.placeId = place._id;
+    await clustered.sting.save();
+    await refreshPlaceGuestCount(place._id);
+  }
+  if (clustered.hive) {
+    await syncHivePlace(clustered.hive);
+  }
 
   if (clustered.hive?.stage === 'hive') {
     const bonus = hiveTtlBonusSec(baseTtl, env.hiveTtlBonusSec);
@@ -486,6 +505,7 @@ export async function deleteSting(id: string, userId: string): Promise<void> {
   const [lng, lat] = sting.location.coordinates;
   const hiveId = sting.hiveId;
   const stingId = sting.id;
+  const placeId = sting.placeId;
 
   await deleteStingImages(sting.imageUrl, sting.thumbnailUrl);
   await sting.deleteOne();
@@ -494,6 +514,7 @@ export async function deleteSting(id: string, userId: string): Promise<void> {
   if (!areChangeStreamsActive()) {
     await notifyStingRemoved(stingId, hiveId, lat, lng);
   }
+  await refreshPlaceGuestCount(placeId);
 }
 
 export async function toggleReaction(

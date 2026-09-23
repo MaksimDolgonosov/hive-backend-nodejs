@@ -118,6 +118,18 @@ const env = {
   smtpUser: process.env.SMTP_USER || '',
   smtpPass: process.env.SMTP_PASS || '',
   smtpFrom: normalizeEmailFrom(),
+  placeRadiusM: Number(process.env.PLACE_RADIUS_M) || 60,
+  placeRadiusMinM: Number(process.env.PLACE_RADIUS_MIN_M) || 30,
+  placeRadiusMaxM: Number(process.env.PLACE_RADIUS_MAX_M) || 100,
+  placeClaimRadiusM: Number(process.env.PLACE_CLAIM_RADIUS_M) || 75,
+  placeOnsiteAccuracyMaxM: Number(process.env.PLACE_ONSITE_ACCURACY_MAX_M) || 50,
+  placeGalleryMax: Number(process.env.PLACE_GALLERY_MAX) || 12,
+  placeMediaMaxBytes: Number(process.env.PLACE_MEDIA_MAX_BYTES) || 15 * 1024 * 1024,
+  placeMaxPerPartner: Number(process.env.PLACE_MAX_PER_PARTNER) || 3,
+  placeOverlapMinM: Number(process.env.PLACE_OVERLAP_MIN_M) || 40,
+  placeReportPauseThreshold: Number(process.env.PLACE_REPORT_PAUSE_THRESHOLD) || 3,
+  placeMediaMinShortSide: Number(process.env.PLACE_MEDIA_MIN_SHORT_SIDE) || 800,
+  placeOnsiteRetainDays: Number(process.env.PLACE_ONSITE_RETAIN_DAYS) || 90,
 } as const;
 
 export default env;

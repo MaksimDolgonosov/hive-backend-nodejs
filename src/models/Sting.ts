@@ -19,6 +19,7 @@ export interface ISting extends Document {
   overviewCellId: string | null;
   echoCellId: string | null;
   campaignId: Types.ObjectId | null;
+  placeId: Types.ObjectId | null;
   mediaPurgedAt: Date | null;
   hardDeleteAt: Date | null;
   createdAt: Date;
@@ -56,6 +57,7 @@ const stingSchema = new Schema<ISting>(
     overviewCellId: { type: String, default: null },
     echoCellId: { type: String, default: null },
     campaignId: { type: Schema.Types.ObjectId, ref: 'Campaign', default: null },
+    placeId: { type: Schema.Types.ObjectId, ref: 'Place', default: null },
     mediaPurgedAt: { type: Date, default: null },
     hardDeleteAt: { type: Date, default: null },
   },
@@ -72,5 +74,6 @@ stingSchema.index({ zoneId: 1, expiresAt: 1 });
 stingSchema.index({ zoneId: 1, createdAt: -1 });
 stingSchema.index({ overviewCellId: 1, expiresAt: 1 });
 stingSchema.index({ campaignId: 1, createdAt: -1 }, { sparse: true });
+stingSchema.index({ placeId: 1, expiresAt: 1 }, { sparse: true });
 
 export default mongoose.model<ISting>('Sting', stingSchema);

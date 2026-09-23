@@ -6,9 +6,11 @@ import env, { isR2Configured } from '../config/env';
 import { UploadedImageUrls } from '../types/sting';
 import { AppError } from '../utils/AppError';
 
-function buildObjectKey(isThumbnail: boolean): string {
+type ObjectPrefix = 'stings' | 'places' | 'onsite';
+
+function buildObjectKey(prefix: ObjectPrefix, isThumbnail: boolean): string {
   const id = crypto.randomUUID();
-  return isThumbnail ? `stings/${id}_thumb.jpg` : `stings/${id}.jpg`;
+  return isThumbnail ? `${prefix}/${id}_thumb.jpg` : `${prefix}/${id}.jpg`;
 }
 
 function buildLocalUrl(filename: string): string {
@@ -48,10 +50,9 @@ async function uploadToR2(key: string, buffer: Buffer): Promise<string> {
 }
 
 async function uploadToLocal(filename: string, buffer: Buffer): Promise<string> {
-  if (!fs.existsSync(env.uploadDir)) {
-    fs.mkdirSync(env.uploadDir, { recursive: true });
-  }
-  await fs.promises.writeFile(path.join(env.uploadDir, filename), buffer);
+  const filePath = path.join(env.uploadDir, filename);
+  await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.promises.writeFile(filePath, buffer);
   return buildLocalUrl(filename);
 }
 
@@ -70,8 +71,8 @@ export async function uploadStingImages(
   }
 
   if (useR2) {
-    const imageKey = buildObjectKey(false);
-    const thumbnailKey = buildObjectKey(true);
+    const imageKey = buildObjectKey('stings', false);
+    const thumbnailKey = buildObjectKey('stings', true);
     const [imageUrl, thumbnailUrl] = await Promise.all([
       uploadToR2(imageKey, originalBuffer),
       uploadToR2(thumbnailKey, thumbnailBuffer),
@@ -129,7 +130,9 @@ async function deleteFromLocal(relativePath: string): Promise<void> {
   }
 }
 
-function parseStingObjectKey(url: string): string | null {
+const STORED_PREFIX = /(?:stings|places|onsite)\/[^?#]+/;
+
+function parseStoredObjectKey(url: string): string | null {
   if (!url) {
     return null;
   }
@@ -141,14 +144,15 @@ function parseStingObjectKey(url: string): string | null {
 
   try {
     const pathname = decodeURIComponent(new URL(url).pathname).replace(/^\/+/, '');
-    if (pathname.startsWith('stings/')) {
-      return pathname;
+    const stored = pathname.match(STORED_PREFIX);
+    if (stored) {
+      return stored[0];
     }
   } catch {
     // ignore invalid URLs, try regex fallback below
   }
 
-  const match = url.match(/stings\/[^?#]+/);
+  const match = url.match(STORED_PREFIX);
   return match?.[0] ?? null;
 }
 
@@ -167,7 +171,85 @@ function parseLocalRelativePath(url: string): string | null {
   return relativePath;
 }
 
-async function deleteStingImageUrl(url: string): Promise<void> {
+async function uploadImagePair(
+  prefix: ObjectPrefix,
+  originalBuffer: Buffer,
+  thumbnailBuffer: Buffer | null,
+): Promise<UploadedImageUrls> {
+  const useR2 = env.storageDriver === 'r2';
+
+  if (useR2 && !isR2Configured()) {
+    throw new AppError(
+      500,
+      'STORAGE_NOT_CONFIGURED',
+      'R2 storage выбран, но переменные окружения не заданы',
+    );
+  }
+
+  if (useR2) {
+    const imageKey = buildObjectKey(prefix, false);
+    const imageUrl = await uploadToR2(imageKey, originalBuffer);
+    const thumbnailUrl = thumbnailBuffer
+      ? await uploadToR2(buildObjectKey(prefix, true), thumbnailBuffer)
+      : imageUrl;
+    return { imageUrl, thumbnailUrl };
+  }
+
+  const id = crypto.randomUUID();
+  const imageUrl = await uploadToLocal(`${prefix}/${id}.jpg`, originalBuffer);
+  const thumbnailUrl = thumbnailBuffer
+    ? await uploadToLocal(`${prefix}/${id}_thumb.jpg`, thumbnailBuffer)
+    : imageUrl;
+  return { imageUrl, thumbnailUrl };
+}
+
+export async function uploadPlaceImages(
+  originalBuffer: Buffer,
+  thumbnailBuffer: Buffer,
+): Promise<UploadedImageUrls> {
+  return uploadImagePair('places', originalBuffer, thumbnailBuffer);
+}
+
+const PRIVATE_SCHEME = 'private://';
+
+function privateRoot(): string {
+  return path.join(path.dirname(env.uploadDir), 'private-uploads');
+}
+
+export async function uploadOnsiteProof(buffer: Buffer): Promise<string> {
+  if (env.storageDriver === 'r2') {
+    const uploaded = await uploadImagePair('onsite', buffer, null);
+    return uploaded.imageUrl;
+  }
+
+  const relative = `onsite/${crypto.randomUUID()}.jpg`;
+  const filePath = path.join(privateRoot(), relative);
+  await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.promises.writeFile(filePath, buffer);
+  return `${PRIVATE_SCHEME}${relative}`;
+}
+
+async function deletePrivateFile(url: string): Promise<void> {
+  const relative = url.slice(PRIVATE_SCHEME.length);
+  if (!relative || relative.includes('..')) {
+    return;
+  }
+  const filePath = path.join(privateRoot(), relative);
+  if (fs.existsSync(filePath)) {
+    await fs.promises.unlink(filePath);
+  }
+}
+
+async function deleteStoredImageUrl(url: string): Promise<void> {
+  if (url.startsWith(PRIVATE_SCHEME)) {
+    try {
+      await deletePrivateFile(url);
+    } catch (error) {
+      console.warn(`[storage] Failed to delete private file:`, error);
+    }
+    return;
+  }
+
   const useR2 = env.storageDriver === 'r2';
 
   if (useR2) {
@@ -176,9 +258,9 @@ async function deleteStingImageUrl(url: string): Promise<void> {
       return;
     }
 
-    const key = parseStingObjectKey(url);
-    if (!key?.startsWith('stings/')) {
-      console.warn(`[storage] Could not resolve R2 key for sting URL: ${url}`);
+    const key = parseStoredObjectKey(url);
+    if (!key) {
+      console.warn(`[storage] Could not resolve R2 key for URL: ${url}`);
       return;
     }
 
@@ -204,7 +286,11 @@ async function deleteStingImageUrl(url: string): Promise<void> {
 }
 
 export async function deleteStingImages(imageUrl: string, thumbnailUrl: string): Promise<void> {
-  await Promise.all([deleteStingImageUrl(imageUrl), deleteStingImageUrl(thumbnailUrl)]);
+  await Promise.all([deleteStoredImageUrl(imageUrl), deleteStoredImageUrl(thumbnailUrl)]);
+}
+
+export async function deleteStoredImage(url: string): Promise<void> {
+  await deleteStoredImageUrl(url);
 }
 
 export async function deleteAvatarImage(userId: string): Promise<void> {

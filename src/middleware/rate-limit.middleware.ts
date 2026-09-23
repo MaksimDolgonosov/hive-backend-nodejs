@@ -87,6 +87,24 @@ export const authIpRateLimit = rateLimit({
   handler: tooManyRequestsHandler('OTP_RATE_LIMITED', 'Слишком много запросов, попробуйте позже'),
 });
 
+function userDailyLimit(max: number, message: string) {
+  return rateLimit({
+    windowMs: 24 * 60 * 60 * 1000,
+    max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req: Request): string => req.user!.id,
+    handler: tooManyRequestsHandler('RATE_LIMITED', message),
+  });
+}
+
+export const partnerApplicationCreateRateLimit = userDailyLimit(3, 'Слишком много заявок, попробуйте завтра');
+export const partnerSubmitRateLimit = userDailyLimit(10, 'Слишком много отправок, попробуйте завтра');
+export const partnerOnsiteRateLimit = userDailyLimit(10, 'Слишком много проверок на точке, попробуйте завтра');
+export const placeMediaRateLimit = userDailyLimit(20, 'Слишком много фото места, попробуйте завтра');
+export const placePauseRateLimit = userDailyLimit(10, 'Слишком много переключений видимости');
+export const placeReportRateLimit = userDailyLimit(5, 'Слишком много жалоб, попробуйте завтра');
+
 export const authEmailRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 15,

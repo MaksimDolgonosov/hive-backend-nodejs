@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import multer from 'multer';
+import env from '../config/env';
 import { AppError } from '../utils/AppError';
 
 const JPEG_MIMETYPE = 'image/jpeg';
@@ -42,4 +43,10 @@ export function handleStingPhotoUpload(req: Request, res: Response, next: NextFu
 
 export function handleAvatarUpload(req: Request, res: Response, next: NextFunction): void {
   runUpload(uploadAvatarPhoto, req, res, next);
+}
+
+const uploadPlacePhoto = createJpegUpload('photo', env.placeMediaMaxBytes);
+
+export function handlePlacePhotoUpload(req: Request, res: Response, next: NextFunction): void {
+  runUpload(uploadPlacePhoto, req, res, next);
 }

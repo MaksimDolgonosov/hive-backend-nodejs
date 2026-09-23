@@ -40,6 +40,7 @@ export function toPublicSting(sting: ISting, options?: PublicStingOptions): Publ
     reactionsCount: sting.reactionsCount,
     comment: sting.comment ?? null,
     shareUrl: stingShareUrl(sting.id, allowSharing),
+    placeId: sting.placeId ? String(sting.placeId) : null,
     ...(options?.hasLiked !== undefined ? { hasLiked: options.hasLiked } : {}),
   };
 }

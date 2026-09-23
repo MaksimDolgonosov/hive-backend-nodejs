@@ -11,6 +11,7 @@ import { deleteStingImages } from './storage.service';
 import { coordinatesToGeoPoint } from '../utils/geo';
 import { toPublicHive } from '../utils/sting.mapper';
 import { refreshHiveFromStings } from './clustering.service';
+import { clearHiveFromPlaces, attachPlaceSummaries, refreshPlaceGuestCount } from './places.service';
 import { recordEchoForExpiredSting } from './echoes.service';
 import User from '../models/User';
 import { PublicContributor } from '../types/growth';
@@ -49,7 +50,8 @@ async function hiveWithContributors(hive: IHive) {
       avatarUrl: author?.avatarUrl ?? null,
     };
   });
-  return toPublicHive(hive, topContributors);
+  const [withPlace] = await attachPlaceSummaries([hive.placeId], [toPublicHive(hive, topContributors)]);
+  return withPlace;
 }
 
 export async function syncHiveDocument(
@@ -70,6 +72,7 @@ export async function syncHiveDocument(
         { $set: { hiveId: null } },
       );
     }
+    await clearHiveFromPlaces(hive._id);
     await hive.deleteOne();
     emitHiveDissolved(String(hive._id), center.lat, center.lng);
     return null;
@@ -159,6 +162,7 @@ async function purgeExpiredSting(sting: ISting, now: Date): Promise<void> {
   }
 
   await notifyStingRemoved(sting.id, sting.hiveId, lat, lng);
+  await refreshPlaceGuestCount(sting.placeId);
 }
 
 export async function reconcileHives(): Promise<void> {

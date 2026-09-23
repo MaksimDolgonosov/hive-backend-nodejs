@@ -3,6 +3,7 @@ import Hive, { IHive } from '../models/Hive';
 import Sting, { ISting } from '../models/Sting';
 import { GeoPoint } from '../types/sting';
 import { computeHiveActivation, HiveStage, isHiveCluster } from '../utils/activation';
+import { syncHivePlace } from './places.service';
 
 export interface HiveAssignmentResult {
   sting: ISting;
@@ -37,6 +38,7 @@ export async function refreshHiveFromStings(hive: IHive, now: Date = new Date())
     hive.ignitedAt = now;
   }
   await hive.save();
+  await syncHivePlace(hive);
   return hive;
 }
 
@@ -117,6 +119,7 @@ export async function assignStingToHive(sting: ISting): Promise<HiveAssignmentRe
   );
 
   sting.hiveId = hive._id;
+  await syncHivePlace(hive);
   return {
     sting,
     hive,
