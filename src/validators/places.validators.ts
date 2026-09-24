@@ -1,5 +1,7 @@
 import { body, param, query } from 'express-validator';
 
+import { normalizePhone } from '../utils/phone';
+
 const CATEGORIES = ['cafe', 'bar', 'restaurant', 'other'];
 const REPORT_REASONS = ['not_a_place', 'wrong_location', 'stolen_photos', 'spam', 'other'];
 const REJECT_CODES = ['quality', 'not_this_place', 'people_sensitive', 'stolen', 'other'];
@@ -12,13 +14,7 @@ export const updatePlaceValidator = [
   body('description').optional({ nullable: true }).isString().isLength({ max: 280 }),
   body('category').optional().isIn(CATEGORIES),
   body('phone').optional({ nullable: true }).custom((value: unknown) => {
-    if (value == null || value === '') {
-      return true;
-    }
-    const raw = String(value).trim().replace(/[\s()-]/g, '');
-    if (!/^\+[1-9]\d{6,14}$/.test(raw)) {
-      throw new Error('Телефон должен быть в формате E.164');
-    }
+    normalizePhone(value);
     return true;
   }),
   body('address.formatted').optional({ nullable: true, checkFalsy: true }).isString().isLength({ max: 200 }),

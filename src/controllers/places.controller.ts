@@ -8,17 +8,11 @@ import Sting from '../models/Sting';
 import * as placesService from '../services/places.service';
 import * as reportsService from '../services/place-reports.service';
 import { AppError } from '../utils/AppError';
+import { normalizePhone } from '../utils/phone';
 import { mapPublicStings } from '../utils/sting.mapper';
 
 function parseBool(value: unknown): boolean {
   return value === true || value === 'true' || value === '1';
-}
-
-function normalizePhone(value: unknown): string | null {
-  if (value == null || value === '') {
-    return null;
-  }
-  return String(value).trim().replace(/[\s()-]/g, '');
 }
 
 export async function getById(req: Request, res: Response, next: NextFunction): Promise<void> {

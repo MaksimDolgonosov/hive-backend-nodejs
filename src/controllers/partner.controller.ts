@@ -3,13 +3,7 @@ import { NextFunction, Request, Response } from 'express';
 import { PlaceCategory } from '../models/PartnerApplication';
 import * as partnerService from '../services/partner-applications.service';
 import { AppError } from '../utils/AppError';
-
-function normalizePhone(value: unknown): string | null {
-  if (value == null || value === '') {
-    return null;
-  }
-  return String(value).trim().replace(/[\s()-]/g, '');
-}
+import { normalizePhone } from '../utils/phone';
 
 function nullableString(value: unknown): string | null {
   if (typeof value !== 'string') {

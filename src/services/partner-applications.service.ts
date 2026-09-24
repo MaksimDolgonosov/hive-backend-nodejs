@@ -6,16 +6,14 @@ import PartnerApplication, {
   IPartnerApplication,
   PlaceCategory,
 } from '../models/PartnerApplication';
-import Place from '../models/Place';
 import User from '../models/User';
-import { EMPTY_SOCIAL_LINKS } from '../types/profile-user';
 import { AppError } from '../utils/AppError';
 import { haversineDistanceM } from '../utils/geo';
 import { assertPlacePhotoSize, processPlacePhoto } from './image.service';
 import { validatePhotoModeration } from './moderation.service';
 import { deleteStoredImage, uploadOnsiteProof } from './storage.service';
 import { validateStingSubmission } from './sting-validation.service';
-import { assertNoPlaceOverlap, assertPlaceCapacity } from './places.service';
+import { assertNoPlaceOverlap, assertPlaceCapacity, upsertOwnerDraftPlace } from './places.service';
 
 const LIBRARY_SOFTWARE = /google photos|screenshot|snapseed|photoshop|lightroom|instagram|whatsapp|telegram|picsart|canva/i;
 
@@ -330,36 +328,21 @@ export async function submitApplication(
 
   const lat = application.address.lat;
   const lng = application.address.lng;
-  await assertPlaceCapacity(userId);
   await assertNoPlaceOverlap(lat, lng, userId);
 
-  const place = await Place.create({
+  const place = await upsertOwnerDraftPlace({
     ownerId: user._id,
     applicationId: application._id,
     name: application.brandName.trim(),
     category: application.category,
-    description: null,
-    address: {
-      formatted: application.address.formatted.trim(),
-      city: application.address.city,
-      country: application.address.country,
-      lat,
-      lng,
-      source: 'declared',
-    },
+    formatted: application.address.formatted.trim(),
+    city: application.address.city,
+    country: application.address.country,
+    lat,
+    lng,
     phone: application.phone,
-    center: {
-      type: 'Point',
-      coordinates: [lng, lat],
-    },
-    radiusM: env.placeRadiusM,
-    socialLinks: {
-      ...EMPTY_SOCIAL_LINKS,
-      instagram: application.listingUrls?.instagram ?? null,
-      website: application.listingUrls?.website ?? null,
-    },
-    status: 'draft',
-    verifiedAt: null,
+    instagram: application.listingUrls?.instagram ?? null,
+    website: application.listingUrls?.website ?? null,
   });
 
   try {

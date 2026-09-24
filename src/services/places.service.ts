@@ -255,8 +255,89 @@ export async function assertNoPlaceOverlap(lat: number, lng: number, ownerId: st
   }
 }
 
+export async function upsertOwnerDraftPlace(input: {
+  ownerId: Types.ObjectId;
+  applicationId: Types.ObjectId;
+  name: string;
+  category: PlaceCategory;
+  formatted: string;
+  city: string | null;
+  country: string | null;
+  lat: number;
+  lng: number;
+  phone: string | null;
+  instagram: string | null;
+  website: string | null;
+}): Promise<IPlace> {
+  const drafts = await Place.find({ ownerId: input.ownerId, status: 'draft' }).sort({ updatedAt: -1 });
+  const place = drafts.find((item) => item.coverMediaId) ?? drafts[0];
+
+  if (!place) {
+    await assertPlaceCapacity(String(input.ownerId));
+    return Place.create({
+      ownerId: input.ownerId,
+      applicationId: input.applicationId,
+      name: input.name,
+      category: input.category,
+      description: null,
+      address: {
+        formatted: input.formatted,
+        city: input.city,
+        country: input.country,
+        lat: input.lat,
+        lng: input.lng,
+        source: 'declared',
+      },
+      phone: input.phone,
+      center: { type: 'Point', coordinates: [input.lng, input.lat] },
+      radiusM: env.placeRadiusM,
+      socialLinks: {
+        ...EMPTY_SOCIAL_LINKS,
+        instagram: input.instagram,
+        website: input.website,
+      },
+      status: 'draft',
+      verifiedAt: null,
+    });
+  }
+
+  place.applicationId = input.applicationId;
+  place.name = input.name;
+  place.category = input.category;
+  place.address.formatted = input.formatted;
+  place.address.city = input.city;
+  place.address.country = input.country;
+  place.address.lat = input.lat;
+  place.address.lng = input.lng;
+  place.address.source = 'declared';
+  place.phone = input.phone;
+  place.center = { type: 'Point', coordinates: [input.lng, input.lat] };
+  place.socialLinks = {
+    ...(place.socialLinks ?? EMPTY_SOCIAL_LINKS),
+    instagram: input.instagram,
+    website: input.website,
+  };
+  place.markModified('address');
+  place.markModified('center');
+  place.markModified('socialLinks');
+  await place.save();
+
+  const extraIds = drafts
+    .filter((item) => String(item._id) !== String(place._id))
+    .map((item) => item._id);
+  if (extraIds.length > 0) {
+    await PlaceMedia.deleteMany({ placeId: { $in: extraIds } });
+    await Place.deleteMany({ _id: { $in: extraIds } });
+  }
+
+  return place;
+}
+
 export async function assertPlaceCapacity(ownerId: string): Promise<void> {
-  const count = await Place.countDocuments({ ownerId });
+  const count = await Place.countDocuments({
+    ownerId,
+    status: { $in: ['live', 'paused', 'suspended'] },
+  });
   if (count >= env.placeMaxPerPartner) {
     throw new AppError(422, 'PLACE_LIMIT', 'Достигнут лимит мест');
   }
@@ -479,6 +560,13 @@ async function promoteDraftIfCover(place: IPlace): Promise<boolean> {
   const owner = await User.findById(place.ownerId).select('accountType');
   if (!owner || (owner.accountType !== 'partner' && owner.accountType !== 'official')) {
     return false;
+  }
+  const occupied = await Place.countDocuments({
+    ownerId: place.ownerId,
+    status: { $in: ['live', 'paused', 'suspended'] },
+  });
+  if (occupied >= env.placeMaxPerPartner) {
+    throw new AppError(422, 'PLACE_LIMIT', 'Достигнут лимит мест');
   }
   place.status = 'live';
   place.pauseReason = null;

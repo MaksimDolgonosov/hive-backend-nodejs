@@ -1,15 +1,11 @@
 import { body, param } from 'express-validator';
 
+import { normalizePhone } from '../utils/phone';
+
 const CATEGORIES = ['cafe', 'bar', 'restaurant', 'other'];
 
 function optionalPhone(value: unknown): true {
-  if (value == null || value === '') {
-    return true;
-  }
-  const raw = String(value).trim().replace(/[\s()-]/g, '');
-  if (!/^\+[1-9]\d{6,14}$/.test(raw)) {
-    throw new Error('Телефон должен быть в формате E.164');
-  }
+  normalizePhone(value);
   return true;
 }
 
