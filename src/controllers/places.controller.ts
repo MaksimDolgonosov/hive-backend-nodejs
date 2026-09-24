@@ -75,6 +75,15 @@ export async function resume(req: Request, res: Response, next: NextFunction): P
   }
 }
 
+export async function removeDraft(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    await placesService.deleteOwnerDraft(req.params.id, req.user!.id);
+    res.status(204).send();
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function addMedia(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     if (!req.file?.buffer) {

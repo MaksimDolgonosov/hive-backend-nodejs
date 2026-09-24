@@ -7,7 +7,7 @@ import PlaceMedia, { IPlaceMedia, MediaKind, MediaRejectCode, MediaSource } from
 import { PlaceCategory } from '../models/PartnerApplication';
 import Sting from '../models/Sting';
 import User from '../models/User';
-import { IHive } from '../models/Hive';
+import Hive, { IHive } from '../models/Hive';
 import { BboxQuery, GeoPoint } from '../types/sting';
 import { EMPTY_SOCIAL_LINKS, UserSocialLinks } from '../types/profile-user';
 import { HiveStage } from '../utils/activation';
@@ -392,6 +392,16 @@ export async function clearHiveFromPlaces(hiveId: Types.ObjectId): Promise<void>
   await Place.updateMany({ hiveId }, { $set: { hiveId: null, hiveStage: null } });
 }
 
+async function detachPlaceFromHives(place: IPlace): Promise<void> {
+  await Hive.updateMany({ placeId: place._id }, { $set: { placeId: null } });
+  if (!place.hiveId) {
+    return;
+  }
+  await clearHiveFromPlaces(place.hiveId);
+  place.hiveId = null;
+  place.hiveStage = null;
+}
+
 export async function findPlaceSummariesInBbox(bbox: BboxQuery): Promise<PlaceSummary[]> {
   const box = bboxToGeoBox(bbox.swLng, bbox.swLat, bbox.neLng, bbox.neLat);
   const places = await Place.find({
@@ -498,14 +508,29 @@ export async function pausePlace(placeId: string, userId: string): Promise<Publi
   }
   place.status = 'paused';
   place.pauseReason = 'owner';
+  await detachPlaceFromHives(place);
   await place.save();
-  if (place.hiveId) {
-    await clearHiveFromPlaces(place.hiveId);
-    place.hiveId = null;
-    place.hiveStage = null;
-    await place.save();
-  }
   return serializePlace(place, userId);
+}
+
+export async function deleteOwnerDraft(placeId: string, userId: string): Promise<void> {
+  const place = await requireOwnedPlace(placeId, userId);
+  if (place.status !== 'draft') {
+    throw new AppError(
+      422,
+      'PLACE_NOT_DRAFT',
+      'Удалить можно только черновик. Опубликованное место убирается с карты.',
+    );
+  }
+
+  const media = await PlaceMedia.find({ placeId: place._id });
+  await Promise.all(
+    media.flatMap((item) => [deleteStoredImage(item.imageUrl), deleteStoredImage(item.thumbnailUrl)]),
+  );
+  await PlaceMedia.deleteMany({ placeId: place._id });
+  await Sting.updateMany({ placeId: place._id }, { $set: { placeId: null } });
+  await detachPlaceFromHives(place);
+  await place.deleteOne();
 }
 
 export async function resumePlace(placeId: string, userId: string): Promise<PublicPlace> {
@@ -665,11 +690,7 @@ async function pauseForMissingCover(place: IPlace): Promise<void> {
   place.pauseReason = 'cover_missing';
   place.coverMediaId = null;
   place.coverThumbnailUrl = null;
-  if (place.hiveId) {
-    await clearHiveFromPlaces(place.hiveId);
-    place.hiveId = null;
-    place.hiveStage = null;
-  }
+  await detachPlaceFromHives(place);
   await place.save();
 }
 

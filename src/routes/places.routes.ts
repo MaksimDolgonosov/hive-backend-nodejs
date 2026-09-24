@@ -37,6 +37,14 @@ router.post(
   handleValidation,
   placesController.resume,
 );
+router.delete(
+  '/:id',
+  requireAuth,
+  placePauseRateLimit,
+  placeIdValidator,
+  handleValidation,
+  placesController.removeDraft,
+);
 router.post(
   '/:id/media',
   requireAuth,
