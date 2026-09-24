@@ -26,6 +26,7 @@ export interface PublicUser {
   avatarUrl: string | null;
   bio: string | null;
   socialLinks: UserSocialLinks;
+  accountType: AccountType;
   createdAt: string;
 }
 
@@ -74,6 +75,7 @@ function toPublicUser(user: IUser): PublicUser {
     avatarUrl: user.avatarUrl,
     bio: user.bio ?? null,
     socialLinks: serializeSocialLinks(user.socialLinks),
+    accountType: user.accountType ?? 'personal',
     createdAt: user.createdAt.toISOString(),
   };
 }
