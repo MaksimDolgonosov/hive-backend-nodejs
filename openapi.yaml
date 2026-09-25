@@ -21,6 +21,10 @@ tags:
     description: Публикация и просмотр жал
   - name: hives
     description: Просмотр ульев (кластеров жал)
+  - name: places
+    description: Карточки заведений
+  - name: partner
+    description: Самопубликация партнёра
   - name: zones
     description: Гео-зоны плотности и TTL
   - name: map
@@ -517,6 +521,10 @@ paths:
           name: includeSeeds
           schema: { type: boolean, default: false }
         - in: query
+          name: includePlaces
+          schema: { type: boolean, default: true }
+          description: Live-места с обложкой в bbox, не больше 100, ближе к центру области
+        - in: query
           name: minResults
           schema: { type: integer, minimum: 0, maximum: 50, default: 0 }
         - in: query
@@ -538,6 +546,11 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Hive'
+                  places:
+                    type: array
+                    description: Есть, когда includePlaces=true
+                    items:
+                      $ref: '#/components/schemas/PlaceSummary'
                   echoes:
                     type: array
                     items:
@@ -938,6 +951,199 @@ paths:
       tags: [admin]
       summary: kFactor и виральные метрики
 
+  /admin/places:
+    post:
+      tags: [admin]
+      summary: Создать official-место без заявки
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ownerId, name, category, center]
+              properties:
+                ownerId: { type: string }
+                name: { type: string, minLength: 2, maxLength: 80 }
+                category: { type: string, enum: [cafe, bar, restaurant, other] }
+                description: { type: string, nullable: true, maxLength: 280 }
+                phone: { type: string, nullable: true }
+                address:
+                  type: object
+                  properties:
+                    formatted: { type: string, maxLength: 200 }
+                    city: { type: string, nullable: true, maxLength: 80 }
+                    country: { type: string, nullable: true, maxLength: 80 }
+                center: { $ref: '#/components/schemas/GeoPoint' }
+      responses:
+        '201':
+          description: Место создано
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [place]
+                properties:
+                  place: { $ref: '#/components/schemas/Place' }
+        '409':
+          description: PLACE_OVERLAP
+        '422':
+          description: PLACE_LIMIT или NOT_PARTNER, если владелец не official
+
+  /admin/places/{id}/suspend:
+    post:
+      tags: [admin]
+      summary: Снять место
+      parameters:
+        - $ref: '#/components/parameters/PlaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 300 }
+      responses:
+        '200':
+          description: Место suspended
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [suspended] }
+
+  /admin/places/{id}/unsuspend:
+    post:
+      tags: [admin]
+      summary: Снять suspend. Место остаётся paused
+      parameters:
+        - $ref: '#/components/parameters/PlaceId'
+      responses:
+        '200':
+          description: Статус paused
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [paused] }
+
+  /admin/places/{id}/transfer:
+    post:
+      tags: [admin]
+      summary: Передать место другому заведению
+      parameters:
+        - $ref: '#/components/parameters/PlaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newOwnerId]
+              properties:
+                newOwnerId: { type: string }
+      responses:
+        '200':
+          description: Новый владелец
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ownerId: { type: string }
+        '422':
+          description: NOT_PARTNER, если один из аккаунтов не заведение
+
+  /admin/places/{id}/center:
+    post:
+      tags: [admin]
+      summary: Сдвинуть центр места
+      parameters:
+        - $ref: '#/components/parameters/PlaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lat, lng]
+              properties:
+                lat: { type: number, minimum: -90, maximum: 90 }
+                lng: { type: number, minimum: -180, maximum: 180 }
+      responses:
+        '200':
+          description: Новый центр
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GeoPoint' }
+
+  /admin/place-media/{id}/review:
+    post:
+      tags: [admin]
+      summary: Отклонить кадр места
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+          description: id PlaceMedia
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [reject] }
+                rejectCode:
+                  type: string
+                  enum: [quality, not_this_place, people_sensitive, stolen, other]
+      responses:
+        '200':
+          description: Кадр rejected. Обложка live-места уводит место в paused с pauseReason=cover_missing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  moderation: { type: string, enum: [rejected] }
+                  rejectCode:
+                    type: string
+                    enum: [quality, not_this_place, people_sensitive, stolen, other]
+
+  /admin/place-reports/{id}/resolve:
+    post:
+      tags: [admin]
+      summary: Принять или закрыть жалобу на место
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [accept, dismiss] }
+      responses:
+        '200':
+          description: Жалоба закрыта
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [accepted, dismissed] }
+
   # ---------------------------------------------------------------------
   # HIVES
   # ---------------------------------------------------------------------
@@ -1006,6 +1212,433 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+
+  /places/me:
+    get:
+      tags: [places]
+      summary: Места текущего владельца
+      responses:
+        '200':
+          description: Список мест владельца, включая draft, paused и suspended
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [places]
+                properties:
+                  places:
+                    type: array
+                    items: { $ref: '#/components/schemas/Place' }
+
+  /places/{id}:
+    get:
+      tags: [places]
+      summary: Карточка места
+      parameters:
+        - $ref: '#/components/parameters/PlaceId'
+      responses:
+        '200':
+          description: >
+            Полный объект для владельца. Чужой paused урезан и hidden=true.
+            Телефон и pauseReason видит только владелец. verifiedAt в ответе null.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlaceView' }
+        '404':
+          description: Нет места, чужой draft или чужой suspended (PLACE_SUSPENDED)
+    patch:
+      tags: [places]
+      summary: Правка карточки. Центр и радиус не меняются
+      parameters:
+        - $ref: '#/components/parameters/PlaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlaceUpdate' }
+      responses:
+        '200':
+          description: Обновлённое место
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [place]
+                properties:
+                  place: { $ref: '#/components/schemas/Place' }
+        '403':
+          description: MEDIA_NOT_OWNER или PLACE_SUSPENDED
+    delete:
+      tags: [places]
+      summary: Удалить черновик вместе с его медиа
+      description: Live и paused этим методом не удаляются. Их убирает POST /places/{id}/pause.
+      parameters:
+        - $ref: '#/components/parameters/PlaceId'
+      responses:
+        '204':
+          description: Черновик удалён
+        '422':
+          description: PLACE_NOT_DRAFT
+
+  /places/{id}/stings:
+    get:
+      tags: [places]
+      summary: Активные жала, привязанные к месту
+      parameters:
+        - $ref: '#/components/parameters/PlaceId'
+        - in: query
+          name: includePartner
+          schema: { type: boolean, default: false }
+          description: По умолчанию только жала personal
+        - in: query
+          name: cursor
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        '200':
+          description: Страница жал. У скрытого места массив пустой
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stings:
+                    type: array
+                    items: { $ref: '#/components/schemas/Sting' }
+                  nextCursor: { type: string, nullable: true }
+        '422':
+          description: INVALID_CURSOR
+
+  /places/{id}/media:
+    post:
+      tags: [places]
+      summary: Обложка или кадр галереи. Сразу approved
+      description: >
+        Поле называется kind, не role. Обложка у draft переводит место в live и отвечает wentLive=true.
+        kind=gallery сервер принимает, не больше 12 кадров.
+      parameters:
+        - $ref: '#/components/parameters/PlaceId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [photo, kind, source]
+              properties:
+                photo: { type: string, format: binary }
+                kind: { type: string, enum: [cover, gallery] }
+                source: { type: string, enum: [library, camera] }
+      responses:
+        '201':
+          description: Медиа принято
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [place, wentLive]
+                properties:
+                  place: { $ref: '#/components/schemas/Place' }
+                  wentLive: { type: boolean }
+        '403':
+          description: NOT_PARTNER, MEDIA_NOT_OWNER или PLACE_SUSPENDED
+        '422':
+          description: MEDIA_TOO_SMALL, MEDIA_LIMIT или VALIDATION_ERROR, если нет photo
+
+  /places/{id}/media/order:
+    patch:
+      tags: [places]
+      summary: Порядок галереи
+      parameters:
+        - $ref: '#/components/parameters/PlaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [galleryIds]
+              properties:
+                galleryIds:
+                  type: array
+                  maxItems: 12
+                  items: { type: string }
+                  description: Все id кадров kind=gallery этого места, в новом порядке
+      responses:
+        '200':
+          description: Порядок сохранён
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [place]
+                properties:
+                  place: { $ref: '#/components/schemas/Place' }
+        '422':
+          description: VALIDATION_ERROR, если список не совпадает с текущей галереей
+
+  /places/{id}/media/{mediaId}:
+    delete:
+      tags: [places]
+      summary: Удалить кадр места
+      description: Удаление обложки у live-места ставит paused, pauseReason=cover_missing и снимает Hive.placeId.
+      parameters:
+        - $ref: '#/components/parameters/PlaceId'
+        - $ref: '#/components/parameters/PlaceMediaId'
+      responses:
+        '200':
+          description: Кадр удалён
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [place]
+                properties:
+                  place: { $ref: '#/components/schemas/Place' }
+        '404':
+          description: Фото не найдено
+
+  /places/{id}/pause:
+    post:
+      tags: [places]
+      summary: Скрыть live-место с карты
+      description: Статус paused, pauseReason=owner. Hive.placeId этого места обнуляется.
+      parameters:
+        - $ref: '#/components/parameters/PlaceId'
+      responses:
+        '200':
+          description: Место paused
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [place]
+                properties:
+                  place: { $ref: '#/components/schemas/Place' }
+        '422':
+          description: PLACE_NOT_LIVE
+
+  /places/{id}/resume:
+    post:
+      tags: [places]
+      summary: Вернуть скрытое место. Нужна обложка
+      parameters:
+        - $ref: '#/components/parameters/PlaceId'
+      responses:
+        '200':
+          description: Место live
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [place]
+                properties:
+                  place: { $ref: '#/components/schemas/Place' }
+        '403':
+          description: NOT_PARTNER
+        '422':
+          description: PLACE_RESUME_NEEDS_COVER или VALIDATION_ERROR, если статус не paused
+
+  /places/{id}/reports:
+    post:
+      tags: [places]
+      summary: Жалоба на место
+      parameters:
+        - $ref: '#/components/parameters/PlaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlaceReportRequest' }
+      responses:
+        '201':
+          description: Жалоба принята
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id]
+                properties:
+                  id: { type: string }
+        '422':
+          description: VALIDATION_ERROR, владелец не может жаловаться на своё место
+
+  /places/{id}/media/{mediaId}/reports:
+    post:
+      tags: [places]
+      summary: Жалоба на кадр места
+      parameters:
+        - $ref: '#/components/parameters/PlaceId'
+        - $ref: '#/components/parameters/PlaceMediaId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlaceReportRequest' }
+      responses:
+        '201':
+          description: Жалоба принята
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id]
+                properties:
+                  id: { type: string }
+        '404':
+          description: Место или кадр не найдены
+
+  /partner/applications:
+    post:
+      tags: [partner]
+      summary: Черновик заявки. Повторный вызов обновляет уже открытый draft и тоже отвечает 201
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PartnerApplicationWrite' }
+      responses:
+        '201':
+          description: Draft создан или обновлён
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [application]
+                properties:
+                  application: { $ref: '#/components/schemas/PartnerApplication' }
+        '422':
+          description: PLACE_LIMIT, если уже заняты три места live, paused или suspended
+
+  /partner/applications/me:
+    get:
+      tags: [partner]
+      summary: Заявки текущего пользователя
+      responses:
+        '200':
+          description: До 20 заявок
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [applications]
+                properties:
+                  applications:
+                    type: array
+                    items: { $ref: '#/components/schemas/PartnerApplication' }
+
+  /partner/applications/{id}:
+    patch:
+      tags: [partner]
+      summary: Правка черновика заявки
+      parameters:
+        - $ref: '#/components/parameters/PlaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PartnerApplicationWrite' }
+      responses:
+        '200':
+          description: Черновик обновлён
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [application]
+                properties:
+                  application: { $ref: '#/components/schemas/PartnerApplication' }
+        '422':
+          description: APPLICATION_NOT_EDITABLE
+
+  /partner/applications/{id}/onsite:
+    post:
+      tags: [partner]
+      summary: Кадр фасада с камеры. Путь публикации его не требует и не создаёт жало
+      parameters:
+        - $ref: '#/components/parameters/PlaceId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [photo, lat, lng, accuracy, capturedAt]
+              properties:
+                photo: { type: string, format: binary }
+                lat: { type: number }
+                lng: { type: number }
+                accuracy: { type: number, minimum: 0 }
+                capturedAt: { type: string, format: date-time }
+      responses:
+        '200':
+          description: On-site записан. Сам кадр в JSON не отдаётся
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [application]
+                properties:
+                  application: { $ref: '#/components/schemas/PartnerApplication' }
+        '422':
+          description: >
+            ONSITE_LOW_ACCURACY, если accuracy хуже 50 м.
+            ONSITE_VALIDATION_FAILED, в том числе details.reason=GALLERY_SOURCE.
+
+  /partner/applications/{id}/submit:
+    post:
+      tags: [partner]
+      summary: Публикует заявку и создаёт Place в draft
+      description: >
+        Центр места — lat/lng из тела, source=declared. Текстовый адрес не обязателен.
+        Нужны название, категория, email и точка. accountType становится partner.
+      parameters:
+        - $ref: '#/components/parameters/PlaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lat, lng]
+              properties:
+                lat: { type: number, minimum: -90, maximum: 90 }
+                lng: { type: number, minimum: -180, maximum: 180 }
+      responses:
+        '200':
+          description: Заявка published, место в draft до загрузки обложки
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [application, placeId]
+                properties:
+                  application: { $ref: '#/components/schemas/PartnerApplication' }
+                  placeId: { type: string }
+        '409':
+          description: PLACE_OVERLAP, чужое live или draft ближе 40 м
+        '422':
+          description: APPLICATION_INCOMPLETE, в details.missing список пустых полей
+
+  /share/places/{id}:
+    servers:
+      - url: https://api.sting-app.example.com
+        description: Корень без префикса /api/v1
+    get:
+      tags: [places]
+      security: []
+      summary: OG-страница live-места с обложкой
+      parameters:
+        - $ref: '#/components/parameters/PlaceId'
+      responses:
+        '200':
+          description: HTML
+        '404':
+          description: Место не live или без обложки
+
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1028,6 +1661,19 @@ components:
       schema:
         type: string
         format: uuid
+    PlaceId:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+        description: Mongo id
+    PlaceMediaId:
+      in: path
+      name: mediaId
+      required: true
+      schema:
+        type: string
     SwLat:
       in: query
       name: swLat
@@ -1323,6 +1969,10 @@ components:
         hiveId:
           type: string
           nullable: true
+        placeId:
+          type: string
+          nullable: true
+          description: Live-место, в радиус которого попало жало
         createdAt:
           type: string
           format: date-time
@@ -1346,6 +1996,7 @@ components:
         - thumbnailUrl
         - location
         - hiveId
+        - placeId
         - createdAt
         - expiresAt
         - reactionsCount
@@ -1369,6 +2020,14 @@ components:
         stage:
           type: string
           enum: [seed, hive]
+        placeId:
+          type: string
+          nullable: true
+        place:
+          nullable: true
+          description: Summary live-места, если центр соты или улья внутри его радиуса
+          allOf:
+            - $ref: '#/components/schemas/PlaceSummary'
         topContributors:
           type: array
           items:
@@ -1393,6 +2052,200 @@ components:
         - stage
         - createdAt
         - updatedAt
+
+
+    SocialLinks:
+      type: object
+      properties:
+        instagram: { type: string, nullable: true }
+        telegram: { type: string, nullable: true }
+        tiktok: { type: string, nullable: true }
+        youtube: { type: string, nullable: true }
+        website: { type: string, nullable: true }
+      required: [instagram, telegram, tiktok, youtube, website]
+
+    PlaceMedia:
+      type: object
+      properties:
+        id: { type: string }
+        placeId: { type: string }
+        kind: { type: string, enum: [cover, gallery] }
+        source: { type: string, enum: [library, camera] }
+        imageUrl: { type: string }
+        thumbnailUrl: { type: string }
+        width: { type: integer }
+        height: { type: integer }
+        sortOrder: { type: integer }
+        moderation: { type: string, enum: [approved, rejected] }
+        rejectCode:
+          type: string
+          nullable: true
+          enum: [quality, not_this_place, people_sensitive, stolen, other]
+        createdAt: { type: string, format: date-time }
+      required: [id, placeId, kind, source, imageUrl, thumbnailUrl, moderation, createdAt]
+
+    PlaceSummary:
+      type: object
+      description: Пин live-места с обложкой. Телефона, EXIF и on-site кадра нет.
+      properties:
+        id: { type: string }
+        name: { type: string }
+        category: { type: string, enum: [cafe, bar, restaurant, other] }
+        coverThumbnailUrl: { type: string, nullable: true }
+        center: { $ref: '#/components/schemas/GeoPoint' }
+        radiusM: { type: number }
+        hiveId: { type: string, nullable: true }
+        hiveStage: { type: string, nullable: true, enum: [seed, hive] }
+        activeGuestStingsCount: { type: integer }
+        status: { type: string, enum: [live] }
+      required: [id, name, category, coverThumbnailUrl, center, radiusM, hiveId, hiveStage, activeGuestStingsCount, status]
+
+    Place:
+      type: object
+      properties:
+        id: { type: string }
+        ownerId: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true, maxLength: 280 }
+        category: { type: string, enum: [cafe, bar, restaurant, other] }
+        status: { type: string, enum: [draft, live, paused, suspended] }
+        pauseReason:
+          type: string
+          nullable: true
+          enum: [owner, cover_missing, reports]
+          description: Чужому зрителю всегда null
+        address:
+          type: object
+          properties:
+            formatted: { type: string }
+            city: { type: string, nullable: true }
+            country: { type: string, nullable: true }
+          required: [formatted, city, country]
+        center: { $ref: '#/components/schemas/GeoPoint' }
+        radiusM: { type: number }
+        cover:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/PlaceMedia'
+        gallery:
+          type: array
+          items: { $ref: '#/components/schemas/PlaceMedia' }
+        socialLinks: { $ref: '#/components/schemas/SocialLinks' }
+        hiveId: { type: string, nullable: true }
+        hiveStage: { type: string, nullable: true, enum: [seed, hive] }
+        activeGuestStingsCount: { type: integer }
+        verifiedAt: { type: string, format: date-time, nullable: true }
+        phone:
+          type: string
+          nullable: true
+          description: Только владелец. В чужом ответе null
+        hidden: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, ownerId, name, category, status, center, radiusM, cover, gallery, socialLinks, hidden]
+
+    PlaceView:
+      type: object
+      required: [place, viewerIsOwner]
+      properties:
+        place: { $ref: '#/components/schemas/Place' }
+        viewerIsOwner: { type: boolean }
+
+    PlaceUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 2, maxLength: 80 }
+        description: { type: string, nullable: true, maxLength: 280 }
+        category: { type: string, enum: [cafe, bar, restaurant, other] }
+        phone: { type: string, nullable: true }
+        address:
+          type: object
+          properties:
+            formatted: { type: string, nullable: true, maxLength: 200 }
+            city: { type: string, nullable: true, maxLength: 80 }
+            country: { type: string, nullable: true, maxLength: 80 }
+        socialLinks:
+          type: object
+          nullable: true
+          description: Пустая строка стирает ключ. @username разворачивается в URL
+          properties:
+            instagram: { type: string, nullable: true }
+            telegram: { type: string, nullable: true }
+            tiktok: { type: string, nullable: true }
+            youtube: { type: string, nullable: true }
+            website: { type: string, nullable: true }
+
+    PlaceReportRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, enum: [not_a_place, wrong_location, stolen_photos, spam, other] }
+        comment: { type: string, maxLength: 500 }
+
+    PartnerApplication:
+      type: object
+      properties:
+        id: { type: string }
+        userId: { type: string }
+        brandName: { type: string }
+        category: { type: string, enum: [cafe, bar, restaurant, other] }
+        address:
+          type: object
+          properties:
+            formatted: { type: string }
+            city: { type: string, nullable: true }
+            country: { type: string, nullable: true }
+            lat: { type: number, nullable: true }
+            lng: { type: number, nullable: true }
+            source: { type: string, enum: [declared, onsite, manual_admin] }
+        phone: { type: string, nullable: true }
+        contactEmail: { type: string }
+        listingUrls:
+          type: object
+          properties:
+            instagram: { type: string, nullable: true }
+            website: { type: string, nullable: true }
+            ymaps: { type: string, nullable: true }
+            twogis: { type: string, nullable: true }
+        onsite:
+          nullable: true
+          type: object
+          properties:
+            verifiedAt: { type: string, format: date-time }
+            lat: { type: number }
+            lng: { type: number }
+            accuracyM: { type: number }
+            distanceToAddressM: { type: number }
+        status: { type: string, enum: [draft, published] }
+        placeId: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        publishedAt: { type: string, format: date-time, nullable: true }
+      required: [id, userId, brandName, category, status, placeId]
+
+    PartnerApplicationWrite:
+      type: object
+      properties:
+        brandName: { type: string, minLength: 2, maxLength: 80 }
+        category: { type: string, enum: [cafe, bar, restaurant, other] }
+        phone: { type: string, nullable: true }
+        contactEmail: { type: string, format: email }
+        address:
+          type: object
+          properties:
+            formatted: { type: string, nullable: true, maxLength: 200 }
+            city: { type: string, nullable: true, maxLength: 80 }
+            country: { type: string, nullable: true, maxLength: 80 }
+            lat: { type: number, minimum: -90, maximum: 90 }
+            lng: { type: number, minimum: -180, maximum: 180 }
+        listingUrls:
+          type: object
+          properties:
+            instagram: { type: string, nullable: true, maxLength: 300 }
+            website: { type: string, nullable: true, maxLength: 300 }
+            ymaps: { type: string, nullable: true, maxLength: 300 }
+            twogis: { type: string, nullable: true, maxLength: 300 }
+
 
     ErrorResponse:
       type: object
